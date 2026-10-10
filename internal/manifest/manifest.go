@@ -185,9 +185,8 @@ func (m *Manifest) Validate() error {
 	return nil
 }
 
-// Save writes the manifest atomically, repos and skills sorted so the file
-// is stable in diffs.
-func Save(path string, m *Manifest) error {
+// Render returns the file content Save would write.
+func Render(m *Manifest) ([]byte, error) {
 	out := &Manifest{Repos: append([]Repo{}, m.Repos...), Skills: append([]Skill{}, m.Skills...)}
 	out.sort()
 	var buf bytes.Buffer
@@ -195,6 +194,16 @@ func Save(path string, m *Manifest) error {
 	enc := toml.NewEncoder(&buf)
 	enc.Indent = ""
 	if err := enc.Encode(out); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+// Save writes the manifest atomically, repos and skills sorted so the file
+// is stable in diffs.
+func Save(path string, m *Manifest) error {
+	data, err := Render(m)
+	if err != nil {
 		return err
 	}
 	tmp, err := os.CreateTemp(filepath.Dir(path), ".skillet.toml.*")
@@ -202,7 +211,7 @@ func Save(path string, m *Manifest) error {
 		return err
 	}
 	defer os.Remove(tmp.Name())
-	if _, err := tmp.Write(buf.Bytes()); err != nil {
+	if _, err := tmp.Write(data); err != nil {
 		tmp.Close()
 		return err
 	}

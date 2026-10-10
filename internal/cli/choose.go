@@ -12,6 +12,7 @@ import (
 	"golang.org/x/term"
 
 	"skillet/internal/agents"
+	"skillet/internal/config"
 	"skillet/internal/deploy"
 	"skillet/internal/state"
 )
@@ -204,18 +205,43 @@ func defaultAgents(all []agents.Agent, served map[string][]string, chosen []stri
 	return want
 }
 
-// confirmChange shows the dry-run plan and applies the change after a "yes".
-// plan and apply run the same operation with DryRun on and off.
-func confirmChange(cmd *cobra.Command, m *deploy.Manager, ch chooser, s agents.Scope, yes bool,
-	run func(dry bool) ([]deploy.Result, error), dryRun bool) error {
-	out := cmd.OutOrStdout()
-	res, err := run(true)
-	printResults(cmd, m, res, s, true)
+// snapshot is a lock-free view of the store for building prompts: the state
+// as last saved and the agents registry. Nothing is held while the user thinks.
+type snapshot struct {
+	St     *state.State
+	Agents *agents.Registry
+}
+
+func takeSnapshot() (*snapshot, error) {
+	cfg, err := config.Load()
 	if err != nil {
-		return err
+		return nil, err
 	}
-	if dryRun {
-		return nil
+	st, err := state.Peek(cfg.Store)
+	if err != nil {
+		return nil, err
+	}
+	reg, err := agents.NewRegistry(cfg.Agents)
+	if err != nil {
+		return nil, err
+	}
+	return &snapshot{St: st, Agents: reg}, nil
+}
+
+// confirmChange shows the dry-run plan and applies the change after a "yes".
+// run performs the same operation with DryRun on and off. The state lock is
+// held while planning and again while applying, never while the user answers;
+// applying plans again, so it refuses safely if things changed in between.
+func confirmChange(cmd *cobra.Command, ch chooser, s agents.Scope, yes bool,
+	run func(m *deploy.Manager, dry bool) ([]deploy.Result, error), dryRun bool) error {
+	out := cmd.OutOrStdout()
+	err := withManager(func(m *deploy.Manager) error {
+		res, err := run(m, true)
+		printResults(cmd, m, res, s, true)
+		return err
+	})
+	if err != nil || dryRun {
+		return err
 	}
 	if !yes {
 		ok, err := ch.Confirm("Apply?")
@@ -227,10 +253,12 @@ func confirmChange(cmd *cobra.Command, m *deploy.Manager, ch chooser, s agents.S
 			return nil
 		}
 	}
-	res, err = run(false)
-	printResults(cmd, m, res, s, false)
-	if err == nil {
-		err = syncManifest(cmd, m, s)
-	}
-	return err
+	return withManager(func(m *deploy.Manager) error {
+		res, err := run(m, false)
+		printResults(cmd, m, res, s, false)
+		if err == nil {
+			err = syncManifest(cmd, m, s)
+		}
+		return err
+	})
 }

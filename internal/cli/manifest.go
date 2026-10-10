@@ -47,13 +47,15 @@ func syncManifest(cmd *cobra.Command, m *deploy.Manager, s agents.Scope) error {
 
 func newSaveCmd() *cobra.Command {
 	var pf projectFlags
+	var dryRun bool
 	cmd := &cobra.Command{
 		Use:   "save",
 		Short: "Write skillet.toml from the project's current skills",
 		Long: `Write skillet.toml in the project root from the skills enabled there, so a
 teammate can recreate them with ` + "`skillet restore`" + `. It records repos, skills,
 the requested agents and pins, not link modes or paths. Commit the file.
-Once it exists, enable and disable keep it up to date.`,
+Once it exists, enable and disable keep it up to date. --dry-run prints the
+file to stdout instead of writing it.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			s, err := pf.scope()
@@ -61,11 +63,23 @@ Once it exists, enable and disable keep it up to date.`,
 				return err
 			}
 			return withManager(func(m *deploy.Manager) error {
+				out := cmd.OutOrStdout()
+				if dryRun {
+					mf, err := m.BuildManifest(s)
+					if err != nil {
+						return err
+					}
+					data, err := manifest.Render(mf)
+					if err != nil {
+						return err
+					}
+					_, err = out.Write(data)
+					return err
+				}
 				mf, err := m.SaveManifest(s)
 				if err != nil {
 					return err
 				}
-				out := cmd.OutOrStdout()
 				fmt.Fprintf(out, "Wrote %s (%d repo(s), %d skill(s))\n", deploy.ManifestPath(s), len(mf.Repos), len(mf.Skills))
 				for _, sk := range mf.Skills {
 					fmt.Fprintf(out, "  %s  %s%s\n", sk.ID, strings.Join(sk.Agents, ", "), pinSuffix(sk.Pin))
@@ -80,6 +94,7 @@ Once it exists, enable and disable keep it up to date.`,
 		},
 	}
 	pf.register(cmd)
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "print the manifest to stdout; write nothing")
 	return cmd
 }
 

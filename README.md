@@ -16,7 +16,7 @@ go build -o bin/skillet ./cmd/skillet
 
 ```bash
 skillet init --store ~/skills-store          # 选择存放仓库的目录
-skillet repo add anthropics/skills            # 也可以是 https/ssh URL 或本地路径
+skillet repo add anthropics/skills            # 也可以是 https/ssh URL 或本地路径（--dry-run 只显示会 clone 到哪）
 skillet list                                  # 列出可用 skill
 
 cd ~/work/projA
@@ -36,12 +36,14 @@ skillet check                                 # fetch 所有仓库，列出哪�
 skillet update                                # 看提交记录和 diffstat，确认后 fast-forward
 skillet update --diff                         # 显示完整 diff（改了脚本时建议看）
 skillet update -y                             # 不询问直接更新
+skillet update --dry-run                      # fetch 后只展示将应用的内容，不询问不合并
+skillet pending [--json]                      # 上次 check 的结果（不联网）
 skillet doctor [--fix] [--json]                        # 失效链接、已删除的项目、同名冲突
 
-skillet save                                  # 把当前项目的 skill 写入 skillet.toml（提交到 git）
+skillet save [--dry-run]                      # 把当前项目的 skill 写入 skillet.toml（提交到 git）
 skillet restore [--dry-run] [--prune]         # 队友 clone 项目后一条命令还原同样的 skill
 
-skillet repo remove anthropics/skills --force # 删除仓库及其所有链接
+skillet repo remove anthropics/skills --force # （--dry-run 先看）删除仓库及其所有链接
 skillet repo show anthropics/skills           # 仓库详情：落后提交数、pin 检出、各 skill 及部署位置（--json）
 skillet agents                                # 各 agent 读取的目录和是否已安装（--json）
 ```

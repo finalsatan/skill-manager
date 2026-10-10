@@ -76,17 +76,29 @@ func newRepoCmd() *cobra.Command {
 	cmd := &cobra.Command{Use: "repo", Short: "Manage skill repositories"}
 
 	var branch string
+	var addDry bool
 	add := &cobra.Command{
 		Use:   "add <owner/repo | url | path>",
 		Short: "Clone a repository into the store and register its skills",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return withManager(func(m *deploy.Manager) error {
+				out := cmd.OutOrStdout()
+				if addDry {
+					plan, err := m.PlanAddRepo(args[0], branch)
+					if err != nil {
+						return err
+					}
+					if branch == "" {
+						branch = "(the remote's default)"
+					}
+					fmt.Fprintf(out, "Dry run, nothing cloned.\nWould add %s\n  url:    %s\n  dir:    %s\n  branch: %s\n", plan.ID, plan.URL, plan.Dir, branch)
+					return nil
+				}
 				id, found, err := m.AddRepo(args[0], branch)
 				if err != nil {
 					return err
 				}
-				out := cmd.OutOrStdout()
 				fmt.Fprintf(out, "Added %s (%d skills)\n", id, len(found))
 				w := table(out)
 				for _, f := range found {
@@ -100,6 +112,7 @@ func newRepoCmd() *cobra.Command {
 		},
 	}
 	add.Flags().StringVar(&branch, "branch", "", "branch to track (default: the remote's default branch)")
+	add.Flags().BoolVar(&addDry, "dry-run", false, "show where it would be cloned; clone nothing")
 
 	var asJSON bool
 	list := &cobra.Command{
@@ -127,7 +140,7 @@ func newRepoCmd() *cobra.Command {
 	}
 	list.Flags().BoolVar(&asJSON, "json", false, "print JSON")
 
-	var force bool
+	var force, rmDry bool
 	remove := &cobra.Command{
 		Use:     "remove <repo>",
 		Aliases: []string{"rm"},
@@ -138,6 +151,18 @@ func newRepoCmd() *cobra.Command {
 				id, err := m.ResolveRepo(args[0])
 				if err != nil {
 					return err
+				}
+				if rmDry {
+					plan, perr := m.PlanRemoveRepo(id, force)
+					out := cmd.OutOrStdout()
+					fmt.Fprintf(out, "Dry run, nothing changed.\nWould remove %s\n", id)
+					for _, t := range plan.Links {
+						fmt.Fprintf(out, "  unlink %s\n", t)
+					}
+					for _, p := range plan.Pins {
+						fmt.Fprintf(out, "  remove pin checkout %s\n", p)
+					}
+					return perr
 				}
 				removed, err := m.RemoveRepo(id, force)
 				for _, t := range removed {
@@ -152,6 +177,7 @@ func newRepoCmd() *cobra.Command {
 		},
 	}
 	remove.Flags().BoolVar(&force, "force", false, "also remove every deployment of its skills")
+	remove.Flags().BoolVar(&rmDry, "dry-run", false, "show what would be removed")
 
 	var showJSON bool
 	show := &cobra.Command{
@@ -295,31 +321,35 @@ SKILLET_NO_INPUT=1 turns that off.`,
 					return err
 				}
 			}
-			return withManager(func(m *deploy.Manager) error {
-				if prompt {
-					ch := newChooser()
-					served := m.ServedIn(s)
+			if prompt {
+				snap, err := takeSnapshot()
+				if err != nil {
+					return err
+				}
+				ch := newChooser()
+				served := deploy.ServedIn(snap.St, s)
+				if len(args) == 0 {
+					if args, err = ch.Skills("Skills to enable", skillOptions(snap.St.Skills, served, true)); err != nil {
+						return err
+					}
 					if len(args) == 0 {
-						if args, err = ch.Skills("Skills to enable", skillOptions(m.St.Skills, served, true)); err != nil {
-							return err
-						}
-						if len(args) == 0 {
-							return errors.New("no skills selected")
-						}
+						return errors.New("no skills selected")
+					}
+				}
+				if len(agentIDs) == 0 {
+					want := defaultAgents(snap.Agents.All(), served, args)
+					if agentIDs, err = ch.Agents("Agents to enable them for", agentOptions(snap.Agents.All(), want)); err != nil {
+						return err
 					}
 					if len(agentIDs) == 0 {
-						want := defaultAgents(m.Agents.All(), served, args)
-						if agentIDs, err = ch.Agents("Agents to enable them for", agentOptions(m.Agents.All(), want)); err != nil {
-							return err
-						}
-						if len(agentIDs) == 0 {
-							return errors.New("no agents selected")
-						}
+						return errors.New("no agents selected")
 					}
-					return confirmChange(cmd, m, ch, s, yes, func(dry bool) ([]deploy.Result, error) {
-						return m.Enable(deploy.ChangeOpts{Skills: args, Agents: agentIDs, Scope: s, Mode: lm, Pin: pin, Unpin: unpin, Alias: alias, DryRun: dry || dryRun})
-					}, dryRun)
 				}
+				return confirmChange(cmd, ch, s, yes, func(m *deploy.Manager, dry bool) ([]deploy.Result, error) {
+					return m.Enable(deploy.ChangeOpts{Skills: args, Agents: agentIDs, Scope: s, Mode: lm, Pin: pin, Unpin: unpin, Alias: alias, DryRun: dry || dryRun})
+				}, dryRun)
+			}
+			return withManager(func(m *deploy.Manager) error {
 				res, err := m.Enable(deploy.ChangeOpts{Skills: args, Agents: agentIDs, Scope: s, Mode: lm, Pin: pin, Unpin: unpin, Alias: alias, DryRun: dryRun})
 				printResults(cmd, m, res, s, dryRun)
 				if err == nil && !dryRun {
@@ -363,24 +393,28 @@ scope, then the plan is shown and confirmed (--yes skips the confirmation).
 			if err != nil {
 				return err
 			}
-			return withManager(func(m *deploy.Manager) error {
-				if prompt {
-					ch := newChooser()
-					opts := deployedOptions(m.St.Skills, m.ServedIn(s))
-					if len(opts) == 0 {
-						fmt.Fprintf(cmd.OutOrStdout(), "No skills are deployed in %s.\n", display(deploy.ScopeLabel(s), agents.Scope{Global: true}))
-						return nil
-					}
-					if args, err = ch.Skills("Skills to disable", opts); err != nil {
-						return err
-					}
-					if len(args) == 0 {
-						return errors.New("no skills selected")
-					}
-					return confirmChange(cmd, m, ch, s, yes, func(dry bool) ([]deploy.Result, error) {
-						return m.Disable(deploy.ChangeOpts{Skills: args, Agents: agentIDs, Scope: s, DryRun: dry || dryRun})
-					}, dryRun)
+			if prompt {
+				snap, err := takeSnapshot()
+				if err != nil {
+					return err
 				}
+				ch := newChooser()
+				opts := deployedOptions(snap.St.Skills, deploy.ServedIn(snap.St, s))
+				if len(opts) == 0 {
+					fmt.Fprintf(cmd.OutOrStdout(), "No skills are deployed in %s.\n", display(deploy.ScopeLabel(s), agents.Scope{Global: true}))
+					return nil
+				}
+				if args, err = ch.Skills("Skills to disable", opts); err != nil {
+					return err
+				}
+				if len(args) == 0 {
+					return errors.New("no skills selected")
+				}
+				return confirmChange(cmd, ch, s, yes, func(m *deploy.Manager, dry bool) ([]deploy.Result, error) {
+					return m.Disable(deploy.ChangeOpts{Skills: args, Agents: agentIDs, Scope: s, DryRun: dry || dryRun})
+				}, dryRun)
+			}
+			return withManager(func(m *deploy.Manager) error {
 				res, err := m.Disable(deploy.ChangeOpts{Skills: args, Agents: agentIDs, Scope: s, DryRun: dryRun})
 				printResults(cmd, m, res, s, dryRun)
 				if err == nil && !dryRun {

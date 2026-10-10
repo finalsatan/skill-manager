@@ -162,8 +162,13 @@ func (m *Manager) DeployedScopes() ScopeSet {
 // ServedIn maps each skill deployed in the scope to the agents its links serve
 // there (sorted, without duplicates).
 func (m *Manager) ServedIn(s agents.Scope) map[string][]string {
+	return ServedIn(m.St.State, s)
+}
+
+// ServedIn is Manager.ServedIn on a state snapshot (see state.Peek).
+func ServedIn(st *state.State, s agents.Scope) map[string][]string {
 	set := map[string]map[string]bool{}
-	for _, d := range m.St.Deployments {
+	for _, d := range st.Deployments {
 		if !inScope(d, s) {
 			continue
 		}

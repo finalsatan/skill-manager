@@ -226,6 +226,25 @@ func (m *Manager) RepoDiff(c RepoCheck, full bool, skillIDs ...string) (log, dif
 	return log, diff, err
 }
 
+// RepoServes lists the agents (sorted) that see an unpinned deployment of a
+// skill from the repo, i.e. the ones an update of the repo changes.
+func (m *Manager) RepoServes(repoID string) []string {
+	set := map[string]bool{}
+	for _, d := range m.St.Deployments {
+		if repo, _ := splitSkillID(d.Skill); repo == repoID && d.Pin == "" {
+			for _, a := range d.Agents {
+				set[a] = true
+			}
+		}
+	}
+	var out []string
+	for a := range set {
+		out = append(out, a)
+	}
+	sort.Strings(out)
+	return out
+}
+
 // UpdateResult describes what Update did for one repo.
 type UpdateResult struct {
 	Repo     string

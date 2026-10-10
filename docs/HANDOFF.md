@@ -1,6 +1,6 @@
 # skillet 交接文档
 
-更新于 2026-10-10，对应提交 `0046a90`（M1 + M2）加上**未提交**的 M3 工作区改动。新会话先读本文，再按需读 `docs/design.md`（设计）和 `docs/research.md`（调研）。
+更新于 2026-10-10，分支 `feat/m4`（M1–M4 及收尾改动全部已提交，尚未合并到 `master`、未推送）。新会话先读本文，再按需读 `docs/design.md`（设计）和 `docs/research.md`（调研）。
 
 ## 1. 项目是什么
 
@@ -22,7 +22,7 @@
 ## 3. 环境
 
 - Go 1.27.2 装在 `~/go-sdk/go`（不在 PATH）。每条命令前加 `export PATH=$HOME/go-sdk/go/bin:$PATH`。
-- 仓库：`/home/ubuntu/github-project-research/skill-manager`，分支 `master`，无远端，未推送。
+- 仓库：`/home/ubuntu/github-project-research/skill-manager`，开发在分支 `feat/m4`（从 `main` 分出），无远端，未推送。
 - 这台机器 git 没配置身份。上次提交用的是 `git -c user.name=zhangyhhust -c user.email=zhangyhhust@gmail.com commit …`，没有写进 config。
 
 常用命令：
@@ -78,40 +78,47 @@ export HOME=<scratch>/home SKILLET_CONFIG_DIR=<scratch>/home/cfg
 ## 6. 已知问题与未验证项
 
 1. **Windows / macOS 从没真正运行过**，只做了 `GOOS=… go vet`。最需要验证的是 junction 降级、junction 删除，以及 store 里 git 只读 pack 文件在 Windows 上能否被 `os.RemoveAll` 删掉（`repo remove` 会用到）。CI 配置在 `.github/workflows/ci.yml`，推到 GitHub 就能跑。
-2. **`update` 等待 y/N 期间一直持有状态锁**，其他前台 skillet 命令会被阻塞（后台检查用 `TryLock`，会跳过）。
+2. （已解决）`update` 与交互式 `enable`/`disable` 等待用户回答时不再持有状态锁：先在锁内 fetch/规划并读出 log/diff，释放后提问，确认后重新 `deploy.Open` 再应用（`Manager.Update` 在 head/upstream 变了时拒绝，应用时 enable/disable 会重新规划）。选项来自 `state.Peek` 快照（`cli/choose.go` 的 `takeSnapshot`）。测试 `cli/dryrun_test.go` 的 `lockFree` 在假 chooser 里断言锁空闲。
 3. 同名冲突只报告不处理（status 警告、doctor 报 `clash`）。
 4. 输出全部英文，用户界面没有中文化（用户没提要求）。
 5. 交互式选择已在 M4 用 `charmbracelet/huh` 实现（见 7.4）；矩阵 TUI（`bubbletea`）仍未做。
 6. 安全修复（已落地）：`skill.Hash` 与 `copyDir` 一致地跟随文件软链接；`checkFree` 拒绝采用被手改过的残留副本；`checkRemovable` 只允许删除指向 store 内的链接，哈希出错也视为错误；`ParseSource` 拒绝含空段、`.`、`..` 的 id（`AddRepo` 另外检查目录在 store 内）；`pending` 用 `OpenTry`，锁被占用时静默退出。
 
-## 7. M3（提醒）：已实现，待提交
+## 7. M3（提醒）：已实现
 
 新增：`internal/notify`（notify-send / osascript / PowerShell toast）、`internal/schedule`（systemd user timer 或 crontab / launchd / schtasks）、`internal/cli/remind.go`（被动提醒与后台检查）、`internal/cli/schedule.go`（`schedule`、`pending`、`hook claude`）。`state` 增加 `TryOpen`、`Peek`、`Repo.Notified`。行为细节见 `docs/design.md` 6.2。
 
 已验证（Linux，隔离 HOME）：`check --quiet` 无输出；`--notify` 无 notify-send 时报错但不失败；被动提醒在终端打印一行并在过期时起后台 `check --quiet`；锁被占用时后台检查立即跳过；`schedule install --dry-run` 输出的 unit 内容；`pending --hook-json` 输出符合 Claude Code 文档的 SessionStart JSON。
 **未验证**：真正的 `schedule install`（systemd/cron/launchd/schtasks）、macOS/Windows 通知、hook 在真实 Claude Code 会话里的显示。
 
-## 7.1 M4：pin 已实现（未提交，分支 `feat/m4`）
+## 7.1 M4：pin 已实现
 
 `enable --pin <rev>` / `--unpin`（不带 `--pin` 保留现有 pin；上游已删除但仍有固定部署的 skill 可以 disable）：见 `docs/design.md` 6.4。代码：`internal/deploy/pins.go`（worktree 创建/清理、`DeploymentSource`）、`enable.go`（计划里的 `replace` 动作）、`doctor.go`（`orphan-pin`、`pin-missing`）、`gitx`（`ResolveCommit`、`Worktree*`）。测试在 `internal/deploy/pins_test.go`。隔离 HOME 手动跑过 enable/--dry-run/取消固定/doctor。未验证：Windows 上 worktree 与 junction 的组合。
 
-## 7.2 M4：skillet.toml 已实现（未提交，分支 `feat/m4`）
+## 7.2 M4：skillet.toml 已实现
 
 `skillet save` / `skillet restore [--dry-run] [--prune]`，以及项目里已有 `skillet.toml` 时 enable/disable 自动重写它：见 `docs/design.md` 6.5。代码：`internal/manifest`（类型、Load/Save/Build）、`internal/deploy/restore.go`（编排，返回 `RestoreResult`）、`internal/deploy/manifest.go`（Build/Save/Sync）、`internal/cli/manifest.go`。测试在 `internal/deploy/restore_test.go` 和 `internal/manifest`。未处理：清单里固定了 pin、但上游已删除该 skill 时 restore 会报"not found"；`update`/`repo remove --force` 之后不会同步清单。
 
-## 7.3 M4：补齐设计里的命令与参数（未提交，分支 `feat/m4`）
+## 7.3 M4：补齐设计里的命令与参数
 
 `repo show <repo> [--json]`（`deploy/repoinfo.go`）、`status --all [--json]`（`Manager.DeployedScopes`、`cli/status.go` 的 `runStatusAll`）、`enable --as <alias>`（`Deployment.Alias`，规划见 `enable.go` 的 `planSkill`，`update.go` 的 resync/adoptOrphans 尊重别名，清单字段 `as`，`ChangeOpts.Unalias` 只给 restore 用）、`agents` 的 INSTALLED 列和 `--json`（`agents.Agent.Detect`）、`doctor --json`。行为见 `docs/design.md` 第 7、8 节。测试：`deploy/alias_test.go`、`deploy/repoinfo_test.go`、`agents/agents_test.go`。别名改名时新链接沿用旧链接的 mode（显式 `--mode` 优先）。
 
-## 7.4 M4：交互式选择已实现（未提交，分支 `feat/m4`）
+## 7.4 M4：交互式选择已实现
 
 `enable`（缺 skill 或缺 `--agent`）与 `disable`（缺 skill）在 stdin、stdout 都是终端时用 huh 多选，随后 dry-run 预览 + “Apply?” 确认（`--yes` 跳过）；全局 `--no-input` / `SKILLET_NO_INPUT` / `CI` 关闭；`update` 的确认在终端里也走 huh。代码：`internal/cli/choose.go`（`chooser` 接口、huh 实现、`skillOptions`/`deployedOptions`/`agentOptions`/`defaultAgents` 纯函数、`confirmChange`）、`commands.go`、`update.go`、`root.go`（`errAborted` -> 退出码 130）、`deploy.Manager.ServedIn`。测试 `internal/cli/choose_test.go` 用假 chooser 覆盖。`--agent` 不再 `MarkFlagRequired`。行为见 `docs/design.md` 第 7 节。
 
 **M4 全部完成。** 未验证：真实终端里 huh 界面的手动试用（本环境只能用 `script` 确认它能启动；伪终端不回应终端查询，会拖几秒）、Ctrl-C 真实按键、Windows / macOS 实际运行。
 
+## 7.5 一致性补完（本轮）
+
+`--dry-run`：`repo add`（`Manager.PlanAddRepo`，不联网不 clone）、`repo remove`（`PlanRemoveRepo`，列出链接/pin 检出和拒绝原因）、`update`（照常 fetch，只展示，不询问；`--no-fetch` 离线）、`save`（`manifest.Render` 输出到 stdout）。`pending --json`（无待更新输出 `[]`；与 `--hook-json` 互斥；因为是给脚本用的，锁被占用时等待而不是静默退出）。`update` 结束后若更新了服务于 claude 以外 agent 的未固定部署，打印一行重启提示（`Manager.RepoServes`）。测试：`deploy/plan_test.go`、`cli/dryrun_test.go`。
+
 ### 下一步
 
-在真实终端手动试一遍交互流程；Windows / macOS 实机验证（见第 6 节第 1 条）。第 6 节第 2 条（update 等待 y/N 时持锁）对后台检查已不构成问题（TryLock 跳过），但会阻塞同时运行的前台命令，仍可改进。
+1. 推到 GitHub 跑 CI（`.github/workflows/ci.yml`），在 macOS / Windows 上验证（见第 6 节第 1 条：junction、只读 pack 文件删除、worktree + junction）。
+2. 在真实终端手动试一遍 huh 交互（enable/disable/update 确认、Ctrl-C 退出码 130）。本环境用 `script` 会因伪终端不回应查询而卡住，不要在那里跑。
+3. 可选：矩阵 TUI（`bubbletea`）。
+4. 已知小缺口：`update`/`repo remove --force` 之后不同步 `skillet.toml`；清单里固定了已被上游删除的 skill 时 restore 报 not found；pi 的 `.pi/skills` 路径未核实。
 
 ## 8. 工作方式备忘
 

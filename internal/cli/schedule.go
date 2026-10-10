@@ -81,13 +81,18 @@ func newScheduleCmd() *cobra.Command {
 }
 
 func newPendingCmd() *cobra.Command {
-	var hookJSON bool
+	var hookJSON, asJSON bool
 	cmd := &cobra.Command{
 		Use:   "pending",
 		Short: "Show upstream updates found by the last check (no network); silent when none",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// Runs from a SessionStart hook: skip instead of waiting on the lock.
-			m, err := deploy.OpenTry()
+			// --json is for scripts that need an answer, so it waits instead.
+			open := deploy.OpenTry
+			if asJSON {
+				open = deploy.Open
+			}
+			m, err := open()
 			if errors.Is(err, state.ErrLocked) {
 				return nil
 			}
@@ -104,6 +109,12 @@ func newPendingCmd() *cobra.Command {
 				if c.Err == nil && !c.UpToDate() {
 					pend = append(pend, c)
 				}
+			}
+			if asJSON {
+				if pend == nil {
+					pend = []deploy.RepoCheck{}
+				}
+				return printJSON(cmd.OutOrStdout(), pend)
 			}
 			if len(pend) == 0 {
 				return nil
@@ -124,6 +135,8 @@ func newPendingCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVar(&hookJSON, "hook-json", false, "emit Claude Code SessionStart hook JSON")
+	cmd.Flags().BoolVar(&asJSON, "json", false, "print the pending repos as JSON ([] when none); waits for the state lock")
+	cmd.MarkFlagsMutuallyExclusive("json", "hook-json")
 	return cmd
 }
 

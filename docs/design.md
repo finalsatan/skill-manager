@@ -176,7 +176,9 @@ mode=auto:
    - pin 部署：不动，提示"N pinned deployment(s) not updated (pinned to <sha>)"；`check` 的 `Deployed` 只数未固定的部署，另有 `Pinned` 计数。上游删除或移动 skill 时也不动固定的部署（源在 worktree 里）。
    - skill 目录在新版本中被删除：链接会失效，列出受影响的部署，询问是否 `disable`。
    - 新增的 skill：只提示，不自动启用。
-5. 提示：Claude Code 会热加载；Codex、pi 可能需要重启会话。
+5. 提示：Claude Code 会热加载；Codex、pi 可能需要重启会话。实现：所有仓库更新完后，若有仓库被更新、且它未固定的部署服务于 claude 以外的 agent，打印一行 `Claude Code reloads skills automatically; restart Codex / OpenCode / pi sessions to pick up changes.`。
+6. 锁：`update` 只在 fetch（`Check`，或 `--no-fetch` 时的 `Pending`）并读出 log/diff 时、以及应用单个仓库时持有状态锁；等待用户回答期间不持锁，确认后重新 `Open` 再 `Update`（`Update` 在 head/upstream 与检查时不一致时拒绝）。交互式 `enable`/`disable` 同理：选项来自无锁快照（`state.Peek`），规划（dry-run）与应用各自短暂持锁，“Apply?” 在锁外。
+7. `update --dry-run`：照常 fetch（`--no-fetch` 则离线），打印每个仓库的 log 与 diffstat，不询问、不合并。
 
 ### 6.4 固定版本（`enable --pin <rev>` / `--unpin`，已实现）
 
@@ -208,7 +210,7 @@ as = "<别名>"          # enable --as 指定的链接名；没有别名时省�
 
 - `agents` 是该 skill 在本项目里被请求的 agent（本 scope 内它所有部署的 `Agents` 之并集），按注册表顺序。链接模式、路径与机器相关，不记录。repo 按 id、skill 按 id 排序，diff 稳定。本地路径仓库（id 为 `local/…`）照写，`save` 会警告队友无法 clone。
 - `internal/manifest`：纯数据层（类型、`Load`/`Save`/`Build`）。`Load` 拒绝未知键、重复项、缺失的 repo、空 agents、非法 skill 路径。`Save` 先写临时文件再 rename。
-- `skillet save [--dir d] [--exact]`：按当前部署生成/覆盖清单。不支持 `-g`。
+- `skillet save [--dir d] [--exact] [--dry-run]`：按当前部署生成/覆盖清单（`--dry-run` 打印到 stdout 不写文件）。不支持 `-g`。
 - `skillet restore [--dir d] [--exact] [--dry-run] [--prune]`（`deploy/restore.go`）：
   1. 先校验清单里的 agent 名；有误则整个命令报错、不改任何东西。
   2. 清单里的 repo 不在 store 时用 `AddRepo(url, branch)` clone，结果 id 必须等于清单 id，否则撤销刚 clone 的仓库并报错；已存在但分支不同只警告。
@@ -222,16 +224,17 @@ as = "<别名>"          # enable --as 指定的链接名；没有别名时省�
 
 ```
 skillet init [--store <dir>]                       # 生成配置，创建 store
-skillet repo add <url | owner/repo> [--branch b]   # clone，扫描 SKILL.md
-skillet repo list | remove <repo> | show <repo> [--json]   # show：地址/分支/HEAD/上游落后数/pin 检出/各 skill 及部署位置
+skillet repo add <url | owner/repo> [--branch b] [--dry-run]   # clone，扫描 SKILL.md；dry-run 只解析并打印 id/URL/目标目录
+skillet repo list | remove <repo> [--force] [--dry-run] | show <repo> [--json]   # show：地址/分支/HEAD/上游落后数/pin 检出/各 skill 及部署位置
 skillet list [--repo <repo>]                       # 列出可用 skill
 skillet enable [<skill…>] [--agent a,b] [--yes] [--dir <path> | --global] [--pin <rev>] [--as <alias>] [--mode …]
 skillet disable [<skill…>] [--agent a,b] [--yes] [--dir <path> | --global]
 skillet status [--dir <path> | --global | --all]   # 当前目录各 agent 生效了什么
-skillet save [--dir <path>]                        # 把项目当前的 skill 写成 skillet.toml
+skillet save [--dir <path>] [--dry-run]                      # 把项目当前的 skill 写成 skillet.toml
 skillet restore [--dir <path>] [--dry-run] [--prune]   # 按 skillet.toml 还原
-skillet check [--notify] [--quiet]
-skillet update [repo…] [--yes] [--diff]
+skillet check [--notify] [--quiet] [--json]
+skillet pending [--json | --hook-json]               # 上次 check 的结果，不联网；--json 无待更新时输出 []
+skillet update [repo…] [--yes] [--diff] [--no-fetch] [--dry-run]
 skillet doctor [--fix] [--json]                             # 失效链接、重名、目录已删除的项目、未受管目录
 skillet agents [--json]                              # 适配器表及检测到的安装情况（INSTALLED 列）
 skillet schedule install [--every 6h] | remove
@@ -245,8 +248,8 @@ skillet hook claude
   - 全局 `--no-input`、环境变量 `SKILLET_NO_INPUT`（非空且非 0/false）或 `CI` 关闭所有提问；非终端同样不提问，行为同以前：缺 skill 报错（提示需要终端），缺 agent 报 `specify at least one agent with --agent`。
   - `update` 的 y/N 在终端里也用同一个确认框；非终端仍读 stdin 一行（管道 `y` 可用）。
 - skill 引用：唯一时直接写 `pdf`；重名时写 `anthropics/skills/pdf` 或完整 id。
-- `--dir` 默认当前目录，并向上找 git 根作为项目目录（`--no-git-root` 关闭）。
-- 所有会改文件系统的命令支持 `--dry-run`，查询类命令（`list`、`repo list/show`、`status`、`check`、`doctor`、`agents`）支持 `--json`。
+- `--dir` 默认当前目录，并向上找 git 根作为项目目录（`--exact` 关闭）。
+- 所有会改文件系统的命令支持 `--dry-run`（`repo add` 不联网不 clone；`repo remove` 列出将删除的链接/副本/pin 检出及拒绝原因；`update` 照常 fetch 但不应用；`save` 把清单打印到 stdout 而不写文件），查询类命令（`list`、`repo list/show`、`status`、`check`、`pending`、`doctor`、`agents`）支持 `--json`。
 - `status --all`（与 `--dir`/`--global` 互斥）依次打印每个有部署记录的 scope：先全局，再各项目目录（按路径排序）；目录已不存在的项目跳过并提示（`doctor --fix` 会忘掉它）。`--json` 输出 `[{scope, dir, missing?, entries}]`。
 - `repo show` 不联网：上游落后数来自上次 `check` 记录的 `upstream`（与 `diffRepo` 同一逻辑），skill 列表和警告来自对 clone 的重新扫描。
 - `agents` 的 INSTALLED：内置 agent 的二进制（`claude`、`codex`、`opencode`、`pi`）在 PATH 上，或配置目录存在（`$CLAUDE_CONFIG_DIR`/`~/.claude`、`$CODEX_HOME`/`~/.codex`、`$XDG_CONFIG_HOME/opencode`、`~/.pi` 或 `$PI_CODING_AGENT_DIR`）即为 `yes`，都没有为 `no`；自定义 agent 没有可检测的信息，显示 `-`（JSON 为 `installed: null`）。

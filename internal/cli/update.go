@@ -152,8 +152,15 @@ func printCheck(out io.Writer, c deploy.RepoCheck) {
 	}
 }
 
+// pendingRepo is a repo with upstream changes, with its log and diff read
+// while the state lock was held so the prompts can run without it.
+type pendingRepo struct {
+	check     deploy.RepoCheck
+	log, diff string
+}
+
 func newUpdateCmd() *cobra.Command {
-	var yes, full, noFetch bool
+	var yes, full, noFetch, dryRun bool
 	cmd := &cobra.Command{
 		Use:   "update [repo]...",
 		Short: "Review upstream changes and fast-forward repos",
@@ -162,10 +169,15 @@ func newUpdateCmd() *cobra.Command {
 For each repo with new commits, skillet prints the commit log and a diffstat
 (--diff for the full diff) and asks before applying. Symlinked skills update
 in place; copies are re-copied unless edited by hand; skills that moved are
-re-linked and links to deleted skills are removed.`,
+re-linked and links to deleted skills are removed.
+
+The state lock is held only while fetching and while applying one repo, not
+while waiting for your answer. --dry-run fetches and shows what would be
+applied, without asking or changing anything.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return withManager(func(m *deploy.Manager) error {
-				var res []deploy.RepoCheck
+			var res []deploy.RepoCheck
+			var items []pendingRepo
+			err := withManager(func(m *deploy.Manager) error {
 				var err error
 				if noFetch {
 					res, err = m.Pending(args)
@@ -175,68 +187,107 @@ re-linked and links to deleted skills are removed.`,
 				if err != nil {
 					return err
 				}
-				out := cmd.OutOrStdout()
-				in := bufio.NewReader(cmd.InOrStdin())
-				var ch chooser
-				if !yes && canPrompt(cmd) {
-					ch = newChooser()
-				}
-				updated, failed := 0, 0
 				for _, c := range res {
 					if c.UpToDate() {
 						continue
 					}
-					printCheck(out, c)
-					if c.Err != nil {
-						failed++
-						continue
-					}
-					log, diff, err := m.RepoDiff(c, full)
-					if err != nil {
-						return err
-					}
-					fmt.Fprintf(out, "\n%s\n\n%s\n\n", indent(log), indent(diff))
-					if !yes {
-						q := fmt.Sprintf("Apply update to %s?", c.Repo)
-						var ok bool
-						if ch != nil {
-							if ok, err = ch.Confirm(q); err != nil {
-								return err
-							}
-						} else {
-							ok = confirm(out, in, q)
-						}
-						if !ok {
-							fmt.Fprintln(out, "  skipped")
-							continue
+					it := pendingRepo{check: c}
+					if c.Err == nil {
+						if it.log, it.diff, err = m.RepoDiff(c, full); err != nil {
+							return err
 						}
 					}
-					r, err := m.Update(c)
-					if err != nil {
-						fmt.Fprintf(out, "  error: %v\n", err)
-						failed++
-						continue
-					}
-					updated++
-					fmt.Fprintf(out, "Updated %s %s -> %s\n", c.Repo, short(r.From), short(r.To))
-					for _, n := range r.Notes {
-						fmt.Fprintf(out, "  %s\n", n)
-					}
-				}
-				switch {
-				case failed > 0:
-					return fmt.Errorf("%d repo(s) could not be updated", failed)
-				case updated == 0 && !anyPending(res):
-					fmt.Fprintln(out, "Everything is up to date.")
+					items = append(items, it)
 				}
 				return nil
 			})
+			if err != nil {
+				return err
+			}
+			out := cmd.OutOrStdout()
+			in := bufio.NewReader(cmd.InOrStdin())
+			var ch chooser
+			if !yes && !dryRun && canPrompt(cmd) {
+				ch = newChooser()
+			}
+			updated, failed := 0, 0
+			restart := false
+			for _, it := range items {
+				c := it.check
+				printCheck(out, c)
+				if c.Err != nil {
+					failed++
+					continue
+				}
+				fmt.Fprintf(out, "\n%s\n\n%s\n\n", indent(it.log), indent(it.diff))
+				if dryRun {
+					continue
+				}
+				if !yes {
+					q := fmt.Sprintf("Apply update to %s?", c.Repo)
+					var ok bool
+					if ch != nil {
+						if ok, err = ch.Confirm(q); err != nil {
+							return err
+						}
+					} else {
+						ok = confirm(out, in, q)
+					}
+					if !ok {
+						fmt.Fprintln(out, "  skipped")
+						continue
+					}
+				}
+				r, serves, err := applyUpdate(c)
+				if err != nil {
+					fmt.Fprintf(out, "  error: %v\n", err)
+					failed++
+					continue
+				}
+				updated++
+				fmt.Fprintf(out, "Updated %s %s -> %s\n", c.Repo, short(r.From), short(r.To))
+				for _, n := range r.Notes {
+					fmt.Fprintf(out, "  %s\n", n)
+				}
+				for _, a := range serves {
+					restart = restart || a != "claude"
+				}
+			}
+			if restart {
+				fmt.Fprintln(out, "Claude Code reloads skills automatically; restart Codex / OpenCode / pi sessions to pick up changes.")
+			}
+			switch {
+			case failed > 0:
+				return fmt.Errorf("%d repo(s) could not be updated", failed)
+			case dryRun && len(items) > 0:
+				fmt.Fprintln(out, "Dry run, nothing applied.")
+			case updated == 0 && !anyPending(res):
+				fmt.Fprintln(out, "Everything is up to date.")
+			}
+			return nil
 		},
 	}
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "apply without asking")
 	cmd.Flags().BoolVar(&full, "diff", false, "show the full diff instead of a diffstat")
 	cmd.Flags().BoolVar(&noFetch, "no-fetch", false, "use the result of the last check instead of fetching")
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "show what would be applied; apply nothing and ask nothing")
 	return cmd
+}
+
+// applyUpdate takes the state lock just long enough to update one repo. It
+// returns the agents that see the repo's unpinned deployments afterwards.
+// Manager.Update refuses if the repo moved since the check.
+func applyUpdate(c deploy.RepoCheck) (deploy.UpdateResult, []string, error) {
+	m, err := deploy.Open()
+	if err != nil {
+		return deploy.UpdateResult{}, nil, err
+	}
+	defer m.Close()
+	r, err := m.Update(c)
+	if err != nil {
+		return r, nil, err
+	}
+	return r, m.RepoServes(c.Repo), nil
 }
 
 func anyPending(res []deploy.RepoCheck) bool {

@@ -21,17 +21,30 @@ type fakeChooser struct {
 
 	skillOpts, agentOpts []option
 	confirms             int
+	onPrompt             func() // called whenever the user would be asked
+}
+
+func (f *fakeChooser) prompted() {
+	if f.onPrompt != nil {
+		f.onPrompt()
+	}
 }
 
 func (f *fakeChooser) Skills(_ string, o []option) ([]string, error) {
+	f.prompted()
 	f.skillOpts = o
 	return f.skills, f.err
 }
 func (f *fakeChooser) Agents(_ string, o []option) ([]string, error) {
+	f.prompted()
 	f.agentOpts = o
 	return f.agents, f.err
 }
-func (f *fakeChooser) Confirm(string) (bool, error) { f.confirms++; return f.confirm, f.err }
+func (f *fakeChooser) Confirm(string) (bool, error) {
+	f.prompted()
+	f.confirms++
+	return f.confirm, f.err
+}
 
 // cliEnv sets up an isolated home, an upstream repo with two skills and an
 // initialized store. It returns the project directory.
