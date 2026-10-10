@@ -218,6 +218,14 @@ func (m *Manager) checkFree(target, id, src string) error {
 		return fmt.Errorf("%s already exists (link to %s, not managed by skillet); remove it or pick another agent", target, t.Dest)
 	case link.ManagedCopy:
 		if t.Marker.Skill == id {
+			// The leftover is deleted on apply, so it must be unmodified.
+			h, err := skill.Hash(target, link.MarkerFile)
+			if err != nil {
+				return err
+			}
+			if h != t.Marker.Hash {
+				return fmt.Errorf("%s is a leftover skillet copy that was edited by hand; remove it by hand if you no longer need the changes", target)
+			}
 			return nil
 		}
 		return fmt.Errorf("%s holds a skillet copy of a different skill (%s)", target, t.Marker.Skill)
@@ -231,11 +239,19 @@ func (m *Manager) checkRemovable(d *state.Deployment) error {
 		return err
 	}
 	switch t.Kind {
-	case link.Missing, link.Link:
+	case link.Missing:
 		return nil
+	case link.Link:
+		if link.Within(t.Dest, m.Cfg.Store) {
+			return nil
+		}
+		return fmt.Errorf("%s is no longer managed by skillet (link to %s, outside the store); remove it by hand", d.Target, t.Dest)
 	case link.ManagedCopy:
 		h, err := skill.Hash(d.Target, link.MarkerFile)
-		if err == nil && h != t.Marker.Hash {
+		if err != nil {
+			return err
+		}
+		if h != t.Marker.Hash {
 			return fmt.Errorf("%s was edited after skillet copied it; remove it by hand if you no longer need the changes", d.Target)
 		}
 		return nil

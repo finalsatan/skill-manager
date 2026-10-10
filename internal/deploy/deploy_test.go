@@ -240,3 +240,62 @@ func TestResolveSkillAmbiguity(t *testing.T) {
 		t.Errorf("ResolveSkill(other/pdf) = %q, %v", id, err)
 	}
 }
+
+func TestCopyWithFileSymlinkIsNotModified(t *testing.T) {
+	e := setup(t, "copy")
+	src, err := e.m.SkillDir("local/up:skills/pdf")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(src, "real.txt"), []byte("data"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("real.txt", filepath.Join(src, "alias.txt")); err != nil {
+		t.Skip("symlinks unavailable:", err)
+	}
+	e.enable(t, []string{"pdf"}, "claude")
+	d := e.m.St.Deployments[0]
+	if h := e.m.Health(d); h != "ok" {
+		t.Errorf("health = %s, want ok", h)
+	}
+	if _, err := e.m.Disable(ChangeOpts{Skills: []string{"pdf"}, Scope: e.proj}); err != nil {
+		t.Errorf("disable: %v", err)
+	}
+}
+
+func TestEnableRefusesEditedLeftoverCopy(t *testing.T) {
+	e := setup(t, "copy")
+	e.enable(t, []string{"pdf"}, "claude")
+	d := e.m.St.Deployments[0]
+	e.m.St.RemoveDeployment(d.Target) // copy left behind, not in state
+	edited := filepath.Join(d.Target, "SKILL.md")
+	if err := os.WriteFile(edited, []byte("mine"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.m.Enable(ChangeOpts{Skills: []string{"pdf"}, Agents: []string{"claude"}, Scope: e.proj}); err == nil {
+		t.Fatal("adopted and deleted an edited leftover copy")
+	}
+	if got := readFile(t, edited); got != "mine" {
+		t.Errorf("edits lost: %q", got)
+	}
+}
+
+func TestDisableKeepsUserReplacedLink(t *testing.T) {
+	e := setup(t, "symlink")
+	e.enable(t, []string{"pdf"}, "claude")
+	target := e.m.St.Deployments[0].Target
+	other := filepath.Join(t.TempDir(), "mine")
+	if err := os.MkdirAll(other, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	os.Remove(target)
+	if err := os.Symlink(other, target); err != nil {
+		t.Skip("symlinks unavailable:", err)
+	}
+	if _, err := e.m.Disable(ChangeOpts{Skills: []string{"pdf"}, Scope: e.proj}); err == nil {
+		t.Fatal("disable removed a link not pointing into the store")
+	}
+	if _, err := os.Lstat(target); err != nil {
+		t.Error("user's link was removed")
+	}
+}

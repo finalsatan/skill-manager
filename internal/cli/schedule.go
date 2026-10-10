@@ -2,6 +2,7 @@ package cli
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"time"
@@ -11,6 +12,7 @@ import (
 	"skillet/internal/config"
 	"skillet/internal/deploy"
 	"skillet/internal/schedule"
+	"skillet/internal/state"
 )
 
 func newScheduleCmd() *cobra.Command {
@@ -80,45 +82,49 @@ func newScheduleCmd() *cobra.Command {
 
 func newPendingCmd() *cobra.Command {
 	var hookJSON bool
-	return withHookFlag(&cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "pending",
 		Short: "Show upstream updates found by the last check (no network); silent when none",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return withManager(func(m *deploy.Manager) error {
-				res, err := m.Pending(nil)
-				if err != nil {
-					return err
-				}
-				var pend []deploy.RepoCheck
-				for _, c := range res {
-					if c.Err == nil && !c.UpToDate() {
-						pend = append(pend, c)
-					}
-				}
-				if len(pend) == 0 {
-					return nil
-				}
-				msg := pendingSummary(pend)
-				out := cmd.OutOrStdout()
-				if hookJSON {
-					return json.NewEncoder(out).Encode(map[string]any{
-						"systemMessage": "skillet: skill updates available\n" + msg,
-						"hookSpecificOutput": map[string]string{
-							"hookEventName":     "SessionStart",
-							"additionalContext": "Upstream updates are available for installed skills (not applied):\n" + msg,
-						},
-					})
-				}
-				fmt.Fprintln(out, msg)
+			// Runs from a SessionStart hook: skip instead of waiting on the lock.
+			m, err := deploy.OpenTry()
+			if errors.Is(err, state.ErrLocked) {
 				return nil
-			})
+			}
+			if err != nil {
+				return err
+			}
+			defer m.Close()
+			res, err := m.Pending(nil)
+			if err != nil {
+				return err
+			}
+			var pend []deploy.RepoCheck
+			for _, c := range res {
+				if c.Err == nil && !c.UpToDate() {
+					pend = append(pend, c)
+				}
+			}
+			if len(pend) == 0 {
+				return nil
+			}
+			msg := pendingSummary(pend)
+			out := cmd.OutOrStdout()
+			if hookJSON {
+				return json.NewEncoder(out).Encode(map[string]any{
+					"systemMessage": "skillet: skill updates available\n" + msg,
+					"hookSpecificOutput": map[string]string{
+						"hookEventName":     "SessionStart",
+						"additionalContext": "Upstream updates are available for installed skills (not applied):\n" + msg,
+					},
+				})
+			}
+			fmt.Fprintln(out, msg)
+			return nil
 		},
-	}, &hookJSON)
-}
-
-func withHookFlag(c *cobra.Command, v *bool) *cobra.Command {
-	c.Flags().BoolVar(v, "hook-json", false, "emit Claude Code SessionStart hook JSON")
-	return c
+	}
+	cmd.Flags().BoolVar(&hookJSON, "hook-json", false, "emit Claude Code SessionStart hook JSON")
+	return cmd
 }
 
 func newHookCmd() *cobra.Command {

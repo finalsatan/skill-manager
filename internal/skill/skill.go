@@ -129,7 +129,7 @@ func ValidName(name string) bool {
 	return len(name) >= 1 && len(name) <= 64 && nameRe.MatchString(name)
 }
 
-// Hash is a content hash of every regular file under dir, used to detect
+// Hash is a content hash of every regular file (or symlink to one) under dir, used to detect
 // whether a copied skill was edited by hand. Files named in skip are ignored.
 func Hash(dir string, skip ...string) (string, error) {
 	h := sha256.New()
@@ -150,7 +150,9 @@ func Hash(dir string, skip ...string) (string, error) {
 				return nil
 			}
 		}
-		if !d.Type().IsRegular() {
+		// Follow file symlinks as link.copyDir does; skip dangling and
+		// directory symlinks.
+		if fi, err := os.Stat(p); err != nil || !fi.Mode().IsRegular() {
 			return nil
 		}
 		f, err := os.Open(p)

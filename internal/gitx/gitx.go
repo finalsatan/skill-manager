@@ -63,6 +63,20 @@ var (
 // ParseSource accepts owner/repo (GitHub), https/ssh/git URLs, scp-like
 // git@host:owner/repo, and local paths or file:// URLs.
 func ParseSource(ref string) (Source, error) {
+	src, err := parseSource(ref)
+	if err != nil {
+		return src, err
+	}
+	// The ID becomes a path under the store, so it must not escape it.
+	for _, seg := range strings.Split(src.ID, "/") {
+		if seg == "" || seg == "." || seg == ".." {
+			return Source{}, fmt.Errorf("invalid repository reference %q: bad path segment %q", ref, seg)
+		}
+	}
+	return src, nil
+}
+
+func parseSource(ref string) (Source, error) {
 	ref = strings.TrimSpace(ref)
 	switch {
 	case ref == "":

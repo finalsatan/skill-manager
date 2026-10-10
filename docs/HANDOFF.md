@@ -82,6 +82,7 @@ export HOME=<scratch>/home SKILLET_CONFIG_DIR=<scratch>/home/cfg
 3. 同名冲突只报告不处理（status 警告、doctor 报 `clash`）。
 4. 输出全部英文，用户界面没有中文化（用户没提要求）。
 5. 没有交互式选择或 TUI。用户看过方案，选择先做矩阵视图的 `status`，交互式选择（`charmbracelet/huh`）和矩阵 TUI（`bubbletea`）暂缓。
+6. 安全修复（已落地）：`skill.Hash` 与 `copyDir` 一致地跟随文件软链接；`checkFree` 拒绝采用被手改过的残留副本；`checkRemovable` 只允许删除指向 store 内的链接，哈希出错也视为错误；`ParseSource` 拒绝含空段、`.`、`..` 的 id（`AddRepo` 另外检查目录在 store 内）；`pending` 用 `OpenTry`，锁被占用时静默退出。
 
 ## 7. M3（提醒）：已实现，待提交
 

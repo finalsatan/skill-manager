@@ -8,6 +8,7 @@ import (
 	"sort"
 
 	"skillet/internal/gitx"
+	"skillet/internal/link"
 	"skillet/internal/skill"
 	"skillet/internal/state"
 )
@@ -23,6 +24,9 @@ func (m *Manager) AddRepo(ref, branch string) (string, []skill.Found, error) {
 	}
 	rel := path.Join("repos", src.ID)
 	dst := filepath.Join(m.Cfg.Store, filepath.FromSlash(rel))
+	if !link.Within(dst, m.Cfg.Store) {
+		return "", nil, fmt.Errorf("repo %s would be stored outside the store", src.ID)
+	}
 	if _, err := os.Stat(dst); err == nil {
 		return "", nil, fmt.Errorf("%s already exists but is not tracked; remove it or add the repo again after deleting it", dst)
 	}

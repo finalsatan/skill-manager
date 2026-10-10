@@ -2,6 +2,21 @@ package gitx
 
 import "testing"
 
+func TestParseSourceRejectsTraversal(t *testing.T) {
+	for _, in := range []string{
+		"https://example.com/../../../../tmp/evil",
+		"https://example.com/a/./b",
+		"git@example.com:../../evil",
+		"git@example.com:a//b",
+		"owner/..",
+		"file:///srv/..",
+	} {
+		if got, err := ParseSource(in); err == nil {
+			t.Errorf("ParseSource(%q) = %+v, want error", in, got)
+		}
+	}
+}
+
 func TestParseSource(t *testing.T) {
 	cases := []struct{ in, url, id string }{
 		{"anthropics/skills", "https://github.com/anthropics/skills.git", "github.com/anthropics/skills"},
