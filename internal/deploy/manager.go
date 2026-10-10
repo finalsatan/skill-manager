@@ -76,8 +76,25 @@ func (m *Manager) SkillDir(id string) (string, error) {
 }
 
 // ResolveSkill accepts a bare name, <repo-suffix>/<name>, or a full skill id.
-func (m *Manager) ResolveSkill(ref string) (string, error) {
-	if _, ok := m.St.Skills[ref]; ok {
+func (m *Manager) ResolveSkill(ref string) (string, error) { return m.resolveSkill(ref, false) }
+
+// resolveSkill is ResolveSkill that, with deployed, also matches skills that
+// no longer exist upstream but still have (pinned) deployments.
+func (m *Manager) resolveSkill(ref string, deployed bool) (string, error) {
+	type cand struct{ name, repo string }
+	cands := map[string]cand{}
+	for id, sk := range m.St.Skills {
+		cands[id] = cand{sk.Name, sk.Repo}
+	}
+	if deployed {
+		for _, d := range m.St.Deployments {
+			if _, ok := cands[d.Skill]; !ok {
+				repo, _ := splitSkillID(d.Skill)
+				cands[d.Skill] = cand{filepath.Base(d.Target), repo}
+			}
+		}
+	}
+	if _, ok := cands[ref]; ok {
 		return ref, nil
 	}
 	name, repoSuffix := ref, ""
@@ -85,11 +102,11 @@ func (m *Manager) ResolveSkill(ref string) (string, error) {
 		repoSuffix, name = ref[:i], ref[i+1:]
 	}
 	var matches []string
-	for id, sk := range m.St.Skills {
-		if sk.Name != name {
+	for id, sk := range cands {
+		if sk.name != name {
 			continue
 		}
-		if repoSuffix != "" && sk.Repo != repoSuffix && !strings.HasSuffix(sk.Repo, "/"+repoSuffix) {
+		if repoSuffix != "" && sk.repo != repoSuffix && !strings.HasSuffix(sk.repo, "/"+repoSuffix) {
 			continue
 		}
 		matches = append(matches, id)

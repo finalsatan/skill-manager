@@ -23,7 +23,7 @@
 <config>/skillet/config.toml      # os.UserConfigDir()：~/.config、~/Library/Application Support、%AppData%
 <store>/                          # 用户选择，默认 ~/.skillet
 ├── repos/<host>/<owner>/<repo>/  # 完整 git clone
-├── pins/<host>/<owner>/<repo>@<short-sha>/   # 固定版本时用 git worktree 检出
+├── pins/<host>/<owner>/<repo>@<short-sha>/   # 固定版本时用 git worktree 检出（已实现，见 6.4）
 ├── state.json                    # 仓库、skill、部署记录
 └── state.lock                    # 文件锁，防止定时任务和手动命令并发写
 ```
@@ -172,10 +172,19 @@ mode=auto:
 4. 同步：
    - symlink / junction 部署：自动生效，无需处理。
    - copy 部署：检查 `.skillet-source.json` 的哈希，未被手改就重新复制，否则跳过并报告。
-   - pin 部署：不动，提示"有 N 个固定版本的部署未更新"。
+   - pin 部署：不动，提示"N pinned deployment(s) not updated (pinned to <sha>)"；`check` 的 `Deployed` 只数未固定的部署，另有 `Pinned` 计数。上游删除或移动 skill 时也不动固定的部署（源在 worktree 里）。
    - skill 目录在新版本中被删除：链接会失效，列出受影响的部署，询问是否 `disable`。
    - 新增的 skill：只提示，不自动启用。
 5. 提示：Claude Code 会热加载；Codex、pi 可能需要重启会话。
+
+### 6.4 固定版本（`enable --pin <rev>` / `--unpin`，已实现）
+
+- `<rev>` 是主 clone 里能解析的任意 git 版本（sha、tag、分支），用 `rev-parse --verify <rev>^{commit}` 解析成完整 sha；该 commit 里必须存在 `<skill 路径>/SKILL.md`，否则整个命令拒绝、不改任何东西。
+- 每个 (repo, sha) 一个 worktree：`git worktree add --detach <store>/pins/<repo id>@<前 7 位> <sha>`，按需创建，所有固定到同一 sha 的部署共用。链接/副本的源是 worktree 里的 skill 目录，链接名仍是 skill 当前的名字；`Deployment.Pin` 记录完整 sha。
+- 同一 scope 内一个 skill 的所有链接共用同一个 pin。再次 `enable`：不带 `--pin` 保留该 skill 在此 scope 的现有 pin（为新 agent 添加的链接同样固定）；带另一个 `--pin` 把所有链接换到新 pin；`--unpin` 指回主 clone（`--pin` 与 `--unpin` 互斥）。换源在计划里是 `replace` 动作，`--dry-run` 可见。`disable` 重新规划时保留原 pin。上游删除了 skill 后，仍有固定部署的 skill 可以按名字或完整 id `disable`（链接名取自部署目标）；`enable` 仍要求 skill 当前存在于仓库中。
+- Health、doctor、resync、relink 等都通过 `Manager.DeploymentSource(d)` 取源目录；固定部署的路径来自 skill id，所以上游改名/移动/删除 skill 都不影响。
+- 清理：没有任何部署引用的 worktree 在 enable/disable 之后用 `git worktree remove --force` + `prune` 删除；`repo remove` 删除该仓库全部 pin worktree。`doctor` 报告并（`--fix`）清理无人使用的 worktree（`orphan-pin`），并报告缺失的 worktree（`pin-missing`，`--fix` 重建）。
+- `status --long` / `--json` 显示 pin（`SOURCE` 列的 `@sha`、`Entry.pin`）。
 
 ## 7. 命令
 
@@ -238,4 +247,4 @@ internal/
 1. **M1 核心**：init、repo add/list/remove、list、enable/disable/status，三平台链接（symlink / junction / copy）+ 安全替换。
 2. **M2 更新**：check、update（diff 审阅、ff-only、copy 重同步、删除检测）、doctor。
 3. **M3 提醒**（已完成）：被动检查、schedule、桌面通知、Claude hook。
-4. **M4 增强**：pin（git worktree）、自定义 agent、项目内 `skillet.toml` 供团队还原。
+4. **M4 增强**：pin（git worktree，已完成）、自定义 agent、项目内 `skillet.toml` 供团队还原。

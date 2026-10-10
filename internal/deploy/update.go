@@ -20,10 +20,11 @@ import (
 type SkillChange struct {
 	ID       string   `json:"id"`
 	Name     string   `json:"name"`
-	Files    []string `json:"files"`    // changed files, relative to the skill directory
-	Code     bool     `json:"code"`     // a non-Markdown file changed (scripts deserve a review)
-	Deployed int      `json:"deployed"` // number of deployments using it
-	Removed  bool     `json:"removed"`  // the skill no longer exists upstream
+	Files    []string `json:"files"`            // changed files, relative to the skill directory
+	Code     bool     `json:"code"`             // a non-Markdown file changed (scripts deserve a review)
+	Deployed int      `json:"deployed"`         // number of unpinned deployments using it
+	Pinned   int      `json:"pinned,omitempty"` // deployments pinned to a commit, which an update does not touch
+	Removed  bool     `json:"removed"`          // the skill no longer exists upstream
 }
 
 // RepoCheck is the result of checking one repo against its upstream.
@@ -132,7 +133,14 @@ func (m *Manager) diffRepo(id string) RepoCheck {
 			}
 			c := byID[sid]
 			if c == nil {
-				c = &SkillChange{ID: sid, Name: sk.Name, Deployed: len(m.St.DeploymentsOf(sid))}
+				c = &SkillChange{ID: sid, Name: sk.Name}
+				for _, d := range m.St.DeploymentsOf(sid) {
+					if d.Pin != "" {
+						c.Pinned++
+					} else {
+						c.Deployed++
+					}
+				}
 				c.Removed = !gitx.Exists(dir, r.Upstream, path.Join(sk.RelPath, skill.FileName))
 				byID[sid] = c
 			}
@@ -263,6 +271,7 @@ func (m *Manager) Update(c RepoCheck) (UpdateResult, error) {
 	m.registerSkills(c.Repo, found)
 	res.Notes = append(res.Notes, m.adoptOrphans(c.Repo)...)
 	res.Notes = append(res.Notes, m.resync(c.Repo)...)
+	res.Notes = append(res.Notes, m.pinNote(c.Repo)...)
 	return res, m.St.Save()
 }
 
@@ -274,8 +283,8 @@ func (m *Manager) adoptOrphans(repoID string) []string {
 	var notes []string
 	prefix := repoID + ":"
 	for _, d := range append([]*state.Deployment(nil), m.St.Deployments...) {
-		if !strings.HasPrefix(d.Skill, prefix) {
-			continue
+		if !strings.HasPrefix(d.Skill, prefix) || d.Pin != "" {
+			continue // pinned deployments keep their own checkout
 		}
 		if _, ok := m.St.Skills[d.Skill]; ok {
 			continue
@@ -319,7 +328,7 @@ func (m *Manager) resync(repoID string) []string {
 	var notes []string
 	for _, d := range append([]*state.Deployment(nil), m.St.Deployments...) {
 		sk, ok := m.St.Skills[d.Skill]
-		if !ok || sk.Repo != repoID {
+		if !ok || sk.Repo != repoID || d.Pin != "" {
 			continue
 		}
 		src, _ := m.SkillDir(d.Skill)

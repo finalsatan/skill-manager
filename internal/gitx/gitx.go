@@ -208,3 +208,33 @@ func FastForward(dir, rev string) error {
 	_, err := Run(dir, "merge", "--ff-only", "--quiet", rev)
 	return err
 }
+
+// ResolveCommit resolves any revision (sha, tag, branch) to a full commit sha.
+func ResolveCommit(dir, rev string) (string, error) {
+	if rev == "" || strings.HasPrefix(rev, "-") {
+		return "", fmt.Errorf("invalid revision %q", rev)
+	}
+	sha, err := Run(dir, "rev-parse", "--verify", "--quiet", rev+"^{commit}")
+	if err != nil || sha == "" {
+		return "", fmt.Errorf("revision %q not found in %s", rev, dir)
+	}
+	return sha, nil
+}
+
+// WorktreeAdd checks out commit as a detached worktree at path.
+func WorktreeAdd(dir, path, commit string) error {
+	_, err := Run(dir, "worktree", "add", "--detach", "--quiet", path, commit)
+	return err
+}
+
+// WorktreeRemove deletes the worktree at path, even with local changes.
+func WorktreeRemove(dir, path string) error {
+	_, err := Run(dir, "worktree", "remove", "--force", path)
+	return err
+}
+
+// WorktreePrune forgets worktrees whose directories are gone.
+func WorktreePrune(dir string) error {
+	_, err := Run(dir, "worktree", "prune")
+	return err
+}

@@ -16,11 +16,12 @@ import (
 
 // Action describes one change to the filesystem.
 type Action struct {
-	Kind   string // "create", "keep", "remove"
+	Kind   string // "create", "keep", "replace" (same target, new source), "remove"
 	Skill  string
 	Target string
 	Mode   link.Mode
 	Agents []string
+	Pin    string // commit the target is (or becomes) pinned to
 }
 
 // Result of an enable/disable call for one skill.
@@ -40,16 +41,24 @@ type ChangeOpts struct {
 	Agents []string // agent ids; for Disable empty means all
 	Scope  agents.Scope
 	Mode   link.Mode // Enable only; empty uses the config default
+	Pin    string    // Enable only; a git revision to pin to; empty keeps the current pin
+	Unpin  bool      // Enable only; move pinned links back to the main clone
 	DryRun bool
 }
 
-// Enable makes each skill visible to the requested agents in the scope.
+// Enable makes each skill visible to the requested agents in the scope. With
+// a pin the links point at a worktree of that revision. Without Pin the
+// skill's existing pin in this scope is kept (new links get it too); Unpin
+// moves the links back to the main clone.
 func (m *Manager) Enable(o ChangeOpts) ([]Result, error) {
 	if len(o.Agents) == 0 {
 		return nil, errors.New("specify at least one agent with --agent")
 	}
 	if _, err := m.Agents.Resolve(o.Agents); err != nil {
 		return nil, err
+	}
+	if o.Pin != "" && o.Unpin {
+		return nil, errors.New("--pin and --unpin cannot be combined")
 	}
 	return m.change(o, func(served []string) []string {
 		return append(served, o.Agents...)
@@ -95,7 +104,9 @@ func (m *Manager) change(o ChangeOpts, want func(served []string) []string, reus
 	var plans []*skillPlan
 	seen := map[string]bool{}
 	for _, ref := range o.Skills {
-		id, err := m.ResolveSkill(ref)
+		// Only disabling may name a skill that upstream deleted but that
+		// still has pinned deployments.
+		id, err := m.resolveSkill(ref, !reuse)
 		if err != nil {
 			return nil, err
 		}
@@ -103,7 +114,7 @@ func (m *Manager) change(o ChangeOpts, want func(served []string) []string, reus
 			continue
 		}
 		seen[id] = true
-		p, err := m.planSkill(id, o.Scope, want, reuse, mode)
+		p, err := m.planSkill(id, o.Scope, want, reuse, mode, o.Pin, o.Unpin)
 		if err != nil {
 			return nil, err
 		}
@@ -131,7 +142,11 @@ func (m *Manager) change(o ChangeOpts, want func(served []string) []string, reus
 	if o.DryRun {
 		return results, nil
 	}
-	return results, m.St.Save()
+	if err := m.St.Save(); err != nil {
+		return results, err
+	}
+	_, err := m.gcPins()
+	return results, err
 }
 
 type skillPlan struct {
@@ -139,15 +154,19 @@ type skillPlan struct {
 	src     string
 	name    string
 	mode    link.Mode
+	pin     string // full sha, or empty to follow the main clone
 	wanted  []string
 	actions []Action
 }
 
-func (m *Manager) planSkill(id string, s agents.Scope, want func([]string) []string, reuse bool, mode link.Mode) (*skillPlan, error) {
+func (m *Manager) planSkill(id string, s agents.Scope, want func([]string) []string, reuse bool, mode link.Mode, rev string, unpin bool) (*skillPlan, error) {
+	var src string
 	sk := m.St.Skills[id]
-	src, err := m.SkillDir(id)
-	if err != nil {
-		return nil, err
+	if sk != nil {
+		var err error
+		if src, err = m.SkillDir(id); err != nil {
+			return nil, err
+		}
 	}
 	var current []*state.Deployment
 	var served, existingDirs []string
@@ -157,6 +176,27 @@ func (m *Manager) planSkill(id string, s agents.Scope, want func([]string) []str
 			served = append(served, d.Agents...)
 			existingDirs = append(existingDirs, filepath.Dir(d.Target))
 		}
+	}
+	// All links of a skill in a scope share one pin: the existing one unless
+	// Enable is asked to re-pin or unpin.
+	pin, name := "", ""
+	if len(current) > 0 {
+		pin, name = current[0].Pin, filepath.Base(current[0].Target)
+	}
+	if sk != nil {
+		name = sk.Name
+	}
+	switch {
+	case reuse && unpin:
+		pin = ""
+	case reuse && rev != "":
+		var err error
+		if pin, err = m.resolvePin(id, rev); err != nil {
+			return nil, err
+		}
+	}
+	if pin != "" {
+		src = m.pinSource(id, pin)
 	}
 	wanted, err := m.Agents.Resolve(want(served))
 	if err != nil {
@@ -170,32 +210,39 @@ func (m *Manager) planSkill(id string, s agents.Scope, want func([]string) []str
 		return nil, err
 	}
 
-	p := &skillPlan{id: id, src: src, name: sk.Name, mode: mode}
+	p := &skillPlan{id: id, src: src, name: name, mode: mode, pin: pin}
 	for _, a := range wanted {
 		p.wanted = append(p.wanted, a.ID)
 	}
 	keep := map[string]bool{}
 	for _, pl := range placements {
-		target := filepath.Join(pl.Dir, sk.Name)
+		target := filepath.Join(pl.Dir, name)
 		keep[target] = true
 		if d := m.St.DeploymentAt(target); d != nil {
 			if d.Skill != id {
 				return nil, fmt.Errorf("%s is already used by skill %s", target, d.Skill)
 			}
-			p.actions = append(p.actions, Action{Kind: "keep", Skill: id, Target: target, Mode: link.Mode(d.Mode), Agents: pl.Agents})
+			kind := "keep"
+			if d.Pin != pin {
+				if err := m.checkRemovable(d); err != nil {
+					return nil, err
+				}
+				kind = "replace"
+			}
+			p.actions = append(p.actions, Action{Kind: kind, Skill: id, Target: target, Mode: link.Mode(d.Mode), Agents: pl.Agents, Pin: pin})
 			continue
 		}
 		if err := m.checkFree(target, id, src); err != nil {
 			return nil, err
 		}
-		p.actions = append(p.actions, Action{Kind: "create", Skill: id, Target: target, Mode: mode, Agents: pl.Agents})
+		p.actions = append(p.actions, Action{Kind: "create", Skill: id, Target: target, Mode: mode, Agents: pl.Agents, Pin: pin})
 	}
 	for _, d := range current {
 		if !keep[d.Target] {
 			if err := m.checkRemovable(d); err != nil {
 				return nil, err
 			}
-			p.actions = append(p.actions, Action{Kind: "remove", Skill: id, Target: d.Target, Mode: link.Mode(d.Mode), Agents: d.Agents})
+			p.actions = append(p.actions, Action{Kind: "remove", Skill: id, Target: d.Target, Mode: link.Mode(d.Mode), Agents: d.Agents, Pin: d.Pin})
 		}
 	}
 	return p, nil
@@ -279,6 +326,17 @@ func checkCollisions(plans []*skillPlan) error {
 func (m *Manager) apply(p *skillPlan, s agents.Scope) ([]Action, error) {
 	scope, dir := scopeFields(s)
 	var done []Action
+	if p.pin != "" {
+		for _, a := range p.actions {
+			if a.Kind != "remove" {
+				repo, _ := splitSkillID(p.id)
+				if err := m.ensurePin(repo, p.pin); err != nil {
+					return done, err
+				}
+				break
+			}
+		}
+	}
 	for _, a := range p.actions {
 		switch a.Kind {
 		case "remove":
@@ -299,6 +357,16 @@ func (m *Manager) apply(p *skillPlan, s agents.Scope) ([]Action, error) {
 				d.Mode, d.SourceHash = string(used), hash
 				a.Kind = "repair"
 			}
+		case "replace":
+			d := m.St.DeploymentAt(a.Target)
+			if err := link.Remove(a.Target); err != nil { // checked removable in the plan
+				return done, err
+			}
+			used, hash, err := link.Create(p.src, a.Target, link.Mode(d.Mode), p.id)
+			if err != nil {
+				return done, fmt.Errorf("link %s: %w", a.Target, err)
+			}
+			d.Agents, d.Pin, d.Mode, d.SourceHash = a.Agents, p.pin, string(used), hash
 		case "create":
 			if err := link.Remove(a.Target); err != nil { // adoptable leftovers only
 				return done, err
@@ -310,7 +378,7 @@ func (m *Manager) apply(p *skillPlan, s agents.Scope) ([]Action, error) {
 			a.Mode = used
 			m.St.Deployments = append(m.St.Deployments, &state.Deployment{
 				Skill: p.id, Agents: a.Agents, Scope: scope, Dir: dir, Target: a.Target,
-				Mode: string(used), SourceHash: hash, CreatedAt: time.Now().UTC(),
+				Mode: string(used), Pin: p.pin, SourceHash: hash, CreatedAt: time.Now().UTC(),
 			})
 		}
 		done = append(done, a)

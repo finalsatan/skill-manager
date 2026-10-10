@@ -222,7 +222,8 @@ func (f *scopeFlags) register(cmd *cobra.Command) {
 func newEnableCmd() *cobra.Command {
 	var sf scopeFlags
 	var agentIDs []string
-	var mode string
+	var mode, pin string
+	var unpin bool
 	var dryRun bool
 	cmd := &cobra.Command{
 		Use:   "enable <skill>... --agent <id,...>",
@@ -231,7 +232,13 @@ func newEnableCmd() *cobra.Command {
 
 When several agents are requested, skillet creates as few links as possible:
 OpenCode also reads .claude/skills, and pi and OpenCode also read .agents/skills.
-The output lists every agent that can see the skill afterwards.`,
+The output lists every agent that can see the skill afterwards.
+
+--pin links a fixed revision (sha, tag or branch of the skill's repo) instead
+of the repo's current checkout; updates do not touch pinned links. Enabling
+again keeps the skill's pin in that scope (links added for more agents get it
+too), another --pin re-points all of them and --unpin moves them back to the
+repo's current checkout.`,
 		Args: cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			s, err := deploy.ResolveScope(sf.global, sf.dir, sf.exact)
@@ -245,7 +252,7 @@ The output lists every agent that can see the skill afterwards.`,
 				}
 			}
 			return withManager(func(m *deploy.Manager) error {
-				res, err := m.Enable(deploy.ChangeOpts{Skills: args, Agents: agentIDs, Scope: s, Mode: lm, DryRun: dryRun})
+				res, err := m.Enable(deploy.ChangeOpts{Skills: args, Agents: agentIDs, Scope: s, Mode: lm, Pin: pin, Unpin: unpin, DryRun: dryRun})
 				printResults(cmd, m, res, s, dryRun)
 				return err
 			})
@@ -254,6 +261,9 @@ The output lists every agent that can see the skill afterwards.`,
 	sf.register(cmd)
 	cmd.Flags().StringSliceVarP(&agentIDs, "agent", "a", nil, "agents to enable for (claude, codex, opencode, pi, all)")
 	cmd.Flags().StringVar(&mode, "mode", "", "link mode: auto, symlink, junction, copy (default from config)")
+	cmd.Flags().StringVar(&pin, "pin", "", "pin to a git revision (sha, tag or branch) of the skill's repo")
+	cmd.Flags().BoolVar(&unpin, "unpin", false, "move pinned links back to the repo's current checkout")
+	cmd.MarkFlagsMutuallyExclusive("pin", "unpin")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "show what would change")
 	cmd.MarkFlagRequired("agent")
 	return cmd
@@ -301,7 +311,13 @@ func printResults(cmd *cobra.Command, m *deploy.Manager, res []deploy.Result, s 
 			case "keep":
 				continue
 			case "create":
-				fmt.Fprintf(out, "  + %s (%s) for %s\n", display(a.Target, s), a.Mode, strings.Join(a.Agents, ", "))
+				fmt.Fprintf(out, "  + %s (%s) for %s%s\n", display(a.Target, s), a.Mode, strings.Join(a.Agents, ", "), pinSuffix(a.Pin))
+			case "replace":
+				what := "now follows the repo"
+				if a.Pin != "" {
+					what = "now pinned to " + short(a.Pin)
+				}
+				fmt.Fprintf(out, "  ~ %s (%s) %s\n", display(a.Target, s), a.Mode, what)
 			case "repair":
 				fmt.Fprintf(out, "  ~ %s re-created (%s)\n", display(a.Target, s), a.Mode)
 			case "remove":
@@ -317,6 +333,14 @@ func printResults(cmd *cobra.Command, m *deploy.Manager, res []deploy.Result, s 
 			fmt.Fprintf(out, "  note: also visible to %s, which read another agent's directory\n", strings.Join(r.Unwanted, ", "))
 		}
 	}
+}
+
+// pinSuffix renders " @ a1b2c3d" for a pinned link, nothing otherwise.
+func pinSuffix(pin string) string {
+	if pin == "" {
+		return ""
+	}
+	return " @ " + short(pin)
 }
 
 func newStatusCmd() *cobra.Command {

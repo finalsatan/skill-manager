@@ -82,7 +82,7 @@ func (m *Manager) RemoveRepo(id string, force bool) ([]string, error) {
 	}
 	var deps []*state.Deployment
 	for _, d := range m.St.Deployments {
-		if sk, ok := m.St.Skills[d.Skill]; ok && sk.Repo == id {
+		if repo, _ := splitSkillID(d.Skill); repo == id {
 			deps = append(deps, d)
 		}
 	}
@@ -100,6 +100,9 @@ func (m *Manager) RemoveRepo(id string, force bool) ([]string, error) {
 		}
 		m.St.RemoveDeployment(d.Target)
 		removed = append(removed, d.Target)
+	}
+	if err := m.removeRepoPins(id); err != nil {
+		return removed, errors.Join(err, m.St.Save())
 	}
 	for sid, sk := range m.St.Skills {
 		if sk.Repo == id {

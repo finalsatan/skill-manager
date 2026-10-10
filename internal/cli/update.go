@@ -122,8 +122,13 @@ func printCheck(out io.Writer, c deploy.RepoCheck) {
 	w := table(out)
 	for _, ch := range c.Changes {
 		used := "unused"
-		if ch.Deployed > 0 {
+		switch {
+		case ch.Deployed > 0 && ch.Pinned > 0:
+			used = fmt.Sprintf("used %dx, %d pinned", ch.Deployed, ch.Pinned)
+		case ch.Deployed > 0:
 			used = fmt.Sprintf("used %dx", ch.Deployed)
+		case ch.Pinned > 0:
+			used = fmt.Sprintf("%d pinned", ch.Pinned)
 		}
 		var flags []string
 		if ch.Removed {
@@ -249,7 +254,7 @@ func newDoctorCmd() *cobra.Command {
 	var fix bool
 	cmd := &cobra.Command{
 		Use:   "doctor",
-		Short: "Find broken links, deleted projects and name clashes",
+		Short: "Find broken links, deleted projects, unused pin checkouts and name clashes",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return withManager(func(m *deploy.Manager) error {
@@ -284,7 +289,7 @@ func newDoctorCmd() *cobra.Command {
 					if !is.Fixed && is.Kind != "pending" {
 						open++
 						switch is.Kind {
-						case "orphan", "project-gone", "missing", "broken", "wrong-target", "outdated":
+						case "orphan", "orphan-pin", "pin-missing", "project-gone", "missing", "broken", "wrong-target", "outdated":
 							fixable++
 						}
 					}

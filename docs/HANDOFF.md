@@ -91,9 +91,13 @@ export HOME=<scratch>/home SKILLET_CONFIG_DIR=<scratch>/home/cfg
 已验证（Linux，隔离 HOME）：`check --quiet` 无输出；`--notify` 无 notify-send 时报错但不失败；被动提醒在终端打印一行并在过期时起后台 `check --quiet`；锁被占用时后台检查立即跳过；`schedule install --dry-run` 输出的 unit 内容；`pending --hook-json` 输出符合 Claude Code 文档的 SessionStart JSON。
 **未验证**：真正的 `schedule install`（systemd/cron/launchd/schtasks）、macOS/Windows 通知、hook 在真实 Claude Code 会话里的显示。
 
-### 下一步：M4
+## 7.1 M4：pin 已实现（未提交，分支 `feat/m4`）
 
-固定版本（`--pin`，用 git worktree 放到 `<store>/pins/…`）、项目内 `skillet.toml` 供团队还原、交互式选择。第 6 节第 2 条（update 等待 y/N 时持锁）对后台检查已不构成问题（TryLock 跳过），但会阻塞同时运行的前台命令，仍可改进。
+`enable --pin <rev>` / `--unpin`（不带 `--pin` 保留现有 pin；上游已删除但仍有固定部署的 skill 可以 disable）：见 `docs/design.md` 6.4。代码：`internal/deploy/pins.go`（worktree 创建/清理、`DeploymentSource`）、`enable.go`（计划里的 `replace` 动作）、`doctor.go`（`orphan-pin`、`pin-missing`）、`gitx`（`ResolveCommit`、`Worktree*`）。测试在 `internal/deploy/pins_test.go`。隔离 HOME 手动跑过 enable/--dry-run/取消固定/doctor。未验证：Windows 上 worktree 与 junction 的组合。
+
+### 下一步：M4 剩余
+
+项目内 `skillet.toml` 供团队还原、交互式选择。第 6 节第 2 条（update 等待 y/N 时持锁）对后台检查已不构成问题（TryLock 跳过），但会阻塞同时运行的前台命令，仍可改进。
 
 ## 8. 工作方式备忘
 

@@ -63,7 +63,7 @@ func Clashes(entries []Entry) []Clash {
 
 // Issue is one problem found by Doctor.
 type Issue struct {
-	Kind   string // repo-missing, orphan, project-gone, missing, broken, wrong-target, outdated, modified, clash, pending
+	Kind   string // repo-missing, orphan, orphan-pin, pin-missing, project-gone, missing, broken, wrong-target, outdated, modified, clash, pending
 	Target string
 	Detail string
 	Paths  []string // extra paths involved (clashes)
@@ -93,6 +93,16 @@ func (m *Manager) Doctor(fix bool) ([]Issue, error) {
 		issues = append(issues, m.checkDeployment(d, fix)...)
 	}
 
+	for _, c := range m.unusedPins() {
+		is := Issue{Kind: "orphan-pin", Target: c.Path, Detail: "pinned checkout is not used by any deployment"}
+		if fix {
+			if is.Err = m.removePin(c); is.Err == nil {
+				is.Fixed = true
+			}
+		}
+		issues = append(issues, is)
+	}
+
 	for _, s := range scopes {
 		entries, err := m.Status(s)
 		if err != nil {
@@ -114,7 +124,8 @@ func (m *Manager) Doctor(fix bool) ([]Issue, error) {
 }
 
 func (m *Manager) checkDeployment(d *state.Deployment, fix bool) []Issue {
-	if _, ok := m.St.Skills[d.Skill]; !ok {
+	// A pinned deployment does not depend on the skill still being upstream.
+	if _, ok := m.St.Skills[d.Skill]; !ok && d.Pin == "" {
 		is := Issue{Kind: "orphan", Target: d.Target, Detail: fmt.Sprintf("skill %s no longer exists in the store", d.Skill)}
 		if fix {
 			if is.Err = m.removeTarget(d, false); is.Err == nil {
@@ -133,6 +144,26 @@ func (m *Manager) checkDeployment(d *state.Deployment, fix bool) []Issue {
 		return []Issue{is}
 	}
 
+	var pre []Issue
+	if repo, _ := splitSkillID(d.Skill); d.Pin != "" {
+		if _, known := m.St.Repos[repo]; known && !dirExists(m.PinDir(repo, d.Pin)) {
+			is := Issue{Kind: "pin-missing", Target: m.PinDir(repo, d.Pin), Detail: fmt.Sprintf("checkout of %s for %s is gone", d.Pin[:pinShort], d.Target)}
+			if !fix {
+				return []Issue{is}
+			}
+			if is.Err = m.ensurePin(repo, d.Pin); is.Err != nil {
+				return []Issue{is}
+			}
+			is.Fixed = true
+			pre = []Issue{is}
+		}
+	}
+
+	return append(pre, m.checkLink(d, fix)...)
+}
+
+// checkLink compares one deployment's link or copy with its source.
+func (m *Manager) checkLink(d *state.Deployment, fix bool) []Issue {
 	h := m.Health(d)
 	if h == "ok" {
 		return nil
@@ -163,7 +194,7 @@ func (m *Manager) checkDeployment(d *state.Deployment, fix bool) []Issue {
 		is.Err = fmt.Errorf("link now points outside the store (%s); fix it by hand", t.Dest)
 		return []Issue{is}
 	}
-	src, _ := m.SkillDir(d.Skill)
+	src, _ := m.DeploymentSource(d)
 	if h == "outdated" {
 		_, is.Err = m.recopy(d, src)
 		is.Fixed = is.Err == nil

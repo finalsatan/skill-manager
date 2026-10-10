@@ -18,6 +18,7 @@ var healthRank = map[string]int{
 type statusRow struct {
 	name    string
 	skill   string // empty for unmanaged
+	pin     string
 	visible map[string]int
 	health  string
 	pending bool
@@ -41,6 +42,9 @@ func printStatusMatrix(out io.Writer, all []agents.Agent, entries []deploy.Entry
 		}
 		if e.Skill != "" && healthRank[e.Health] > healthRank[r.health] {
 			r.health = e.Health
+		}
+		if r.pin == "" {
+			r.pin = e.Pin
 		}
 		r.pending = r.pending || e.Pending
 		if e.Health != "missing" {
@@ -71,7 +75,7 @@ func printStatusMatrix(out io.Writer, all []agents.Agent, entries []deploy.Entry
 		}
 		src := "-"
 		if r.skill != "" {
-			src = shortSource(r.skill)
+			src = shortSource(r.skill) + pinRef(r.pin)
 		}
 		st := r.health
 		if st == "ok" && r.pending {
@@ -109,11 +113,19 @@ func printStatusLong(out io.Writer, entries []deploy.Entry, s agents.Scope) erro
 	for _, e := range entries {
 		src := "-"
 		if e.Skill != "" {
-			src = shortSource(e.Skill)
+			src = shortSource(e.Skill) + pinRef(e.Pin)
 		}
 		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", e.Agent, e.Name, e.Health, src, display(e.Path, s))
 	}
 	return w.Flush()
+}
+
+// pinRef renders "@a1b2c3d" for a pinned deployment, nothing otherwise.
+func pinRef(pin string) string {
+	if pin == "" {
+		return ""
+	}
+	return "@" + short(pin)
 }
 
 // shortSource renders a skill id as its repo, dropping the github.com host.

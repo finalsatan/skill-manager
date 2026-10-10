@@ -18,7 +18,8 @@ type Entry struct {
 	Path   string `json:"path"`
 	Skill  string `json:"skill,omitempty"` // empty when not managed by skillet
 	Mode   string `json:"mode,omitempty"`
-	Health string `json:"health"` // ok, missing, broken, wrong-target, modified, outdated, unmanaged
+	Pin    string `json:"pin,omitempty"` // commit the link is pinned to
+	Health string `json:"health"`        // ok, missing, broken, wrong-target, modified, outdated, unmanaged
 	// Pending is set when upstream has changes for this skill not yet applied.
 	Pending bool `json:"pending,omitempty"`
 }
@@ -47,7 +48,7 @@ func (m *Manager) Status(s agents.Scope) ([]Entry, error) {
 					h = m.Health(d)
 					health[p] = h
 				}
-				out = append(out, Entry{Agent: a.ID, Name: e.Name(), Path: p, Skill: d.Skill, Mode: d.Mode, Health: h, Pending: m.pending(d.Skill)})
+				out = append(out, Entry{Agent: a.ID, Name: e.Name(), Path: p, Skill: d.Skill, Mode: d.Mode, Pin: d.Pin, Health: h, Pending: d.Pin == "" && m.pending(d.Skill)})
 			}
 		}
 	}
@@ -61,7 +62,7 @@ func (m *Manager) Status(s agents.Scope) ([]Entry, error) {
 			continue
 		}
 		for _, id := range d.Agents {
-			out = append(out, Entry{Agent: id, Name: filepath.Base(d.Target), Path: d.Target, Skill: d.Skill, Mode: d.Mode, Health: "missing"})
+			out = append(out, Entry{Agent: id, Name: filepath.Base(d.Target), Path: d.Target, Skill: d.Skill, Mode: d.Mode, Pin: d.Pin, Health: "missing"})
 		}
 	}
 	order := map[string]int{}
@@ -79,7 +80,7 @@ func (m *Manager) Status(s agents.Scope) ([]Entry, error) {
 
 // Health checks one deployment against the filesystem.
 func (m *Manager) Health(d *state.Deployment) string {
-	src, err := m.SkillDir(d.Skill)
+	src, err := m.DeploymentSource(d)
 	if err != nil {
 		return "broken"
 	}
