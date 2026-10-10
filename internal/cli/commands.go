@@ -254,6 +254,9 @@ repo's current checkout.`,
 			return withManager(func(m *deploy.Manager) error {
 				res, err := m.Enable(deploy.ChangeOpts{Skills: args, Agents: agentIDs, Scope: s, Mode: lm, Pin: pin, Unpin: unpin, DryRun: dryRun})
 				printResults(cmd, m, res, s, dryRun)
+				if err == nil && !dryRun {
+					err = syncManifest(cmd, m, s)
+				}
 				return err
 			})
 		},
@@ -285,6 +288,9 @@ func newDisableCmd() *cobra.Command {
 			return withManager(func(m *deploy.Manager) error {
 				res, err := m.Disable(deploy.ChangeOpts{Skills: args, Agents: agentIDs, Scope: s, DryRun: dryRun})
 				printResults(cmd, m, res, s, dryRun)
+				if err == nil && !dryRun {
+					err = syncManifest(cmd, m, s)
+				}
 				return err
 			})
 		},

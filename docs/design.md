@@ -186,6 +186,36 @@ mode=auto:
 - 清理：没有任何部署引用的 worktree 在 enable/disable 之后用 `git worktree remove --force` + `prune` 删除；`repo remove` 删除该仓库全部 pin worktree。`doctor` 报告并（`--fix`）清理无人使用的 worktree（`orphan-pin`），并报告缺失的 worktree（`pin-missing`，`--fix` 重建）。
 - `status --long` / `--json` 显示 pin（`SOURCE` 列的 `@sha`、`Entry.pin`）。
 
+### 6.5 项目清单 `skillet.toml`（已实现）
+
+团队把 `skillet.toml` 提交到项目根目录（即 `ResolveScope` 得到的项目目录），队友用 `skillet restore` 一条命令还原同样的 skill。
+
+```toml
+# Managed by skillet. Restore with `skillet restore`.
+
+[[repo]]
+id = "github.com/anthropics/skills"
+url = "https://github.com/anthropics/skills.git"
+branch = "main"
+
+[[skill]]
+id = "github.com/anthropics/skills:skills/pdf"
+agents = ["claude", "codex"]
+pin = "<完整 sha>"     # 未固定时省略
+```
+
+- `agents` 是该 skill 在本项目里被请求的 agent（本 scope 内它所有部署的 `Agents` 之并集），按注册表顺序。链接模式、路径与机器相关，不记录。repo 按 id、skill 按 id 排序，diff 稳定。本地路径仓库（id 为 `local/…`）照写，`save` 会警告队友无法 clone。
+- `internal/manifest`：纯数据层（类型、`Load`/`Save`/`Build`）。`Load` 拒绝未知键、重复项、缺失的 repo、空 agents、非法 skill 路径。`Save` 先写临时文件再 rename。
+- `skillet save [--dir d] [--exact]`：按当前部署生成/覆盖清单。不支持 `-g`。
+- `skillet restore [--dir d] [--exact] [--dry-run] [--prune]`（`deploy/restore.go`）：
+  1. 先校验清单里的 agent 名；有误则整个命令报错、不改任何东西。
+  2. 清单里的 repo 不在 store 时用 `AddRepo(url, branch)` clone，结果 id 必须等于清单 id，否则撤销刚 clone 的仓库并报错；已存在但分支不同只警告。
+  3. 每个 skill 一次计划：agent 集合精确等于清单（多出的 agent 被停用），有 `pin` 就固定，没有就 `--unpin`，所以还原后状态与清单一致，重复执行无变化。pin 在本地 clone 里找不到时 `git fetch origin <branch>` 后重试一次。
+  4. 清单里的 skill 在仓库中不存在、repo clone 失败等不会中断：记入 problems，继续其他 skill，最后以非零退出。
+  5. 本项目已启用但不在清单里的 skill：默认只列出（`not in skillet.toml (kept; --prune to remove)`），`--prune` 才停用。
+  6. `--dry-run` 什么都不改，也不 clone：打印 `Would clone <url>`，并跳过尚未 clone 的仓库里的 skill。
+- 同步：项目根已有 `skillet.toml` 时，项目级 `enable`/`disable` 成功后（非 dry-run）按状态重写它并打印 `Updated skillet.toml`；没有该文件就什么都不做，不会凭空生成。`restore` 本身不回写清单。
+
 ## 7. 命令
 
 ```
@@ -196,6 +226,8 @@ skillet list [--repo <repo>]                       # 列出可用 skill
 skillet enable <skill…> --agent a,b [--dir <path> | --global] [--pin <rev>] [--mode …]
 skillet disable <skill…> [--agent a,b] [--dir <path> | --global]
 skillet status [--dir <path> | --global | --all]   # 当前目录各 agent 生效了什么
+skillet save [--dir <path>]                        # 把项目当前的 skill 写成 skillet.toml
+skillet restore [--dir <path>] [--dry-run] [--prune]   # 按 skillet.toml 还原
 skillet check [--notify] [--quiet]
 skillet update [repo…] [--yes] [--diff]
 skillet doctor [--fix]                             # 失效链接、重名、目录已删除的项目、未受管目录
@@ -247,4 +279,4 @@ internal/
 1. **M1 核心**：init、repo add/list/remove、list、enable/disable/status，三平台链接（symlink / junction / copy）+ 安全替换。
 2. **M2 更新**：check、update（diff 审阅、ff-only、copy 重同步、删除检测）、doctor。
 3. **M3 提醒**（已完成）：被动检查、schedule、桌面通知、Claude hook。
-4. **M4 增强**：pin（git worktree，已完成）、自定义 agent、项目内 `skillet.toml` 供团队还原。
+4. **M4 增强**：pin（git worktree，已完成）、自定义 agent、项目内 `skillet.toml` 供团队还原（`save`/`restore`，已完成，见 6.5）；交互式选择待做。

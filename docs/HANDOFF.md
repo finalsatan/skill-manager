@@ -95,9 +95,13 @@ export HOME=<scratch>/home SKILLET_CONFIG_DIR=<scratch>/home/cfg
 
 `enable --pin <rev>` / `--unpin`（不带 `--pin` 保留现有 pin；上游已删除但仍有固定部署的 skill 可以 disable）：见 `docs/design.md` 6.4。代码：`internal/deploy/pins.go`（worktree 创建/清理、`DeploymentSource`）、`enable.go`（计划里的 `replace` 动作）、`doctor.go`（`orphan-pin`、`pin-missing`）、`gitx`（`ResolveCommit`、`Worktree*`）。测试在 `internal/deploy/pins_test.go`。隔离 HOME 手动跑过 enable/--dry-run/取消固定/doctor。未验证：Windows 上 worktree 与 junction 的组合。
 
+## 7.2 M4：skillet.toml 已实现（未提交，分支 `feat/m4`）
+
+`skillet save` / `skillet restore [--dry-run] [--prune]`，以及项目里已有 `skillet.toml` 时 enable/disable 自动重写它：见 `docs/design.md` 6.5。代码：`internal/manifest`（类型、Load/Save/Build）、`internal/deploy/restore.go`（编排，返回 `RestoreResult`）、`internal/deploy/manifest.go`（Build/Save/Sync）、`internal/cli/manifest.go`。测试在 `internal/deploy/restore_test.go` 和 `internal/manifest`。未处理：清单里固定了 pin、但上游已删除该 skill 时 restore 会报"not found"；`update`/`repo remove --force` 之后不会同步清单。
+
 ### 下一步：M4 剩余
 
-项目内 `skillet.toml` 供团队还原、交互式选择。第 6 节第 2 条（update 等待 y/N 时持锁）对后台检查已不构成问题（TryLock 跳过），但会阻塞同时运行的前台命令，仍可改进。
+交互式选择。第 6 节第 2 条（update 等待 y/N 时持锁）对后台检查已不构成问题（TryLock 跳过），但会阻塞同时运行的前台命令，仍可改进。
 
 ## 8. 工作方式备忘
 

@@ -31,6 +31,8 @@ func NewRoot() *cobra.Command {
 		newEnableCmd(),
 		newDisableCmd(),
 		newStatusCmd(),
+		newSaveCmd(),
+		newRestoreCmd(),
 		newCheckCmd(),
 		newUpdateCmd(),
 		newDoctorCmd(),
