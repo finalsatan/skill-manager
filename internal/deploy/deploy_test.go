@@ -11,6 +11,7 @@ import (
 	"skillet/internal/agents"
 	"skillet/internal/config"
 	"skillet/internal/link"
+	"skillet/internal/state"
 )
 
 type env struct {
@@ -220,6 +221,43 @@ func TestRemoveRepo(t *testing.T) {
 	}
 	if len(removed) != 2 || len(e.m.St.Skills) != 0 || len(e.m.St.Deployments) != 0 {
 		t.Errorf("removed=%v skills=%d deployments=%d", removed, len(e.m.St.Skills), len(e.m.St.Deployments))
+	}
+}
+
+func TestRemoveRepoForceFailureKeepsStateInSync(t *testing.T) {
+	e := setup(t, "symlink")
+	e.enable(t, []string{"pdf", "web-search"}, "claude")
+	// Deployments run in target order, so pdf is unlinked before web-search fails.
+	pdf := filepath.Join(e.proj.Dir, ".claude", "skills", "pdf")
+	web := filepath.Join(e.proj.Dir, ".claude", "skills", "web-search")
+	outside := t.TempDir()
+	if err := os.Remove(web); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, web); err != nil {
+		t.Skipf("symlink unavailable: %v", err)
+	}
+
+	removed, err := e.m.RemoveRepo("local/up", true)
+	if err == nil {
+		t.Fatal("expected an error for the replaced link")
+	}
+	if len(removed) != 1 || removed[0] != pdf {
+		t.Errorf("removed = %v, want [%s]", removed, pdf)
+	}
+	if _, err := os.Lstat(pdf); !os.IsNotExist(err) {
+		t.Errorf("pdf link still on disk: %v", err)
+	}
+
+	st, err := state.Peek(e.m.Cfg.Store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(st.Deployments) != 1 || st.Deployments[0].Target != web {
+		t.Errorf("saved deployments = %+v, want only %s", st.Deployments, web)
+	}
+	if _, ok := st.Repos["local/up"]; !ok || len(st.Skills) != 2 {
+		t.Errorf("repo/skills dropped: repos=%d skills=%d", len(st.Repos), len(st.Skills))
 	}
 }
 

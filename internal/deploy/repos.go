@@ -1,6 +1,7 @@
 package deploy
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path"
@@ -91,6 +92,10 @@ func (m *Manager) RemoveRepo(id string, force bool) ([]string, error) {
 	}
 	for _, d := range deps {
 		if err := m.removeTarget(d, false); err != nil {
+			// Forget the links already deleted; the repo stays registered.
+			if len(removed) > 0 {
+				err = errors.Join(err, m.St.Save())
+			}
 			return removed, err
 		}
 		m.St.RemoveDeployment(d.Target)
