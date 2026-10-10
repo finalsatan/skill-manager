@@ -24,6 +24,8 @@ skillet enable pdf -a claude,codex            # 在当前项目（git 根）启�
 skillet enable pdf -a all --dry-run           # 先看会建哪些链接
 skillet enable pdf -a claude -g               # 用户级（全局）启用
 skillet status                                # skill × agent 矩阵；-l 显示每条链接路径
+skillet enable weird_name -a claude --as weird-name   # 名字不合规或重名时，换一个链接名
+skillet status --all                          # 所有有部署的 scope（全局 + 各项目）
 skillet disable pdf -a claude                 # 只对 claude 停用
 skillet disable pdf                           # 全部停用
 
@@ -31,13 +33,14 @@ skillet check                                 # fetch 所有仓库，列出哪�
 skillet update                                # 看提交记录和 diffstat，确认后 fast-forward
 skillet update --diff                         # 显示完整 diff（改了脚本时建议看）
 skillet update -y                             # 不询问直接更新
-skillet doctor [--fix]                        # 失效链接、已删除的项目、同名冲突
+skillet doctor [--fix] [--json]                        # 失效链接、已删除的项目、同名冲突
 
 skillet save                                  # 把当前项目的 skill 写入 skillet.toml（提交到 git）
 skillet restore [--dry-run] [--prune]         # 队友 clone 项目后一条命令还原同样的 skill
 
 skillet repo remove anthropics/skills --force # 删除仓库及其所有链接
-skillet agents                                # 各 agent 读取的目录
+skillet repo show anthropics/skills           # 仓库详情：落后提交数、pin 检出、各 skill 及部署位置（--json）
+skillet agents                                # 各 agent 读取的目录和是否已安装（--json）
 ```
 
 skill 重名时用 `owner/repo/name` 或完整 id（`skillet list --json` 里的 `id`）。

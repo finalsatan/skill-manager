@@ -268,8 +268,12 @@ func (m *Manager) Update(c RepoCheck) (UpdateResult, error) {
 	if err != nil {
 		return res, err
 	}
+	oldNames := map[string]string{}
+	for id, sk := range m.St.Skills {
+		oldNames[id] = sk.Name
+	}
 	m.registerSkills(c.Repo, found)
-	res.Notes = append(res.Notes, m.adoptOrphans(c.Repo)...)
+	res.Notes = append(res.Notes, m.adoptOrphans(c.Repo, oldNames)...)
 	res.Notes = append(res.Notes, m.resync(c.Repo)...)
 	res.Notes = append(res.Notes, m.pinNote(c.Repo)...)
 	return res, m.St.Save()
@@ -278,8 +282,9 @@ func (m *Manager) Update(c RepoCheck) (UpdateResult, error) {
 // adoptOrphans handles deployments whose skill vanished from the repo after
 // an update. If the repo now has exactly one skill with the same name (the
 // directory was moved), the deployment follows it; otherwise the link is
-// removed because it would dangle.
-func (m *Manager) adoptOrphans(repoID string) []string {
+// removed because it would dangle. oldNames holds the skills' names before
+// the rescan: an aliased link no longer carries its skill's name.
+func (m *Manager) adoptOrphans(repoID string, oldNames map[string]string) []string {
 	var notes []string
 	prefix := repoID + ":"
 	for _, d := range append([]*state.Deployment(nil), m.St.Deployments...) {
@@ -289,9 +294,13 @@ func (m *Manager) adoptOrphans(repoID string) []string {
 		if _, ok := m.St.Skills[d.Skill]; ok {
 			continue
 		}
+		name := filepath.Base(d.Target)
+		if d.Alias != "" && oldNames[d.Skill] != "" {
+			name = oldNames[d.Skill]
+		}
 		var match []string
 		for id, sk := range m.St.Skills {
-			if sk.Repo == repoID && sk.Name == filepath.Base(d.Target) {
+			if sk.Repo == repoID && sk.Name == name {
 				match = append(match, id)
 			}
 		}
@@ -332,7 +341,8 @@ func (m *Manager) resync(repoID string) []string {
 			continue
 		}
 		src, _ := m.SkillDir(d.Skill)
-		if filepath.Base(d.Target) != sk.Name {
+		// An aliased link keeps its name when the skill is renamed.
+		if d.Alias == "" && filepath.Base(d.Target) != sk.Name {
 			notes = append(notes, m.relink(d, src, sk.Name))
 			continue
 		}

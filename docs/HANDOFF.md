@@ -99,6 +99,10 @@ export HOME=<scratch>/home SKILLET_CONFIG_DIR=<scratch>/home/cfg
 
 `skillet save` / `skillet restore [--dry-run] [--prune]`，以及项目里已有 `skillet.toml` 时 enable/disable 自动重写它：见 `docs/design.md` 6.5。代码：`internal/manifest`（类型、Load/Save/Build）、`internal/deploy/restore.go`（编排，返回 `RestoreResult`）、`internal/deploy/manifest.go`（Build/Save/Sync）、`internal/cli/manifest.go`。测试在 `internal/deploy/restore_test.go` 和 `internal/manifest`。未处理：清单里固定了 pin、但上游已删除该 skill 时 restore 会报"not found"；`update`/`repo remove --force` 之后不会同步清单。
 
+## 7.3 M4：补齐设计里的命令与参数（未提交，分支 `feat/m4`）
+
+`repo show <repo> [--json]`（`deploy/repoinfo.go`）、`status --all [--json]`（`Manager.DeployedScopes`、`cli/status.go` 的 `runStatusAll`）、`enable --as <alias>`（`Deployment.Alias`，规划见 `enable.go` 的 `planSkill`，`update.go` 的 resync/adoptOrphans 尊重别名，清单字段 `as`，`ChangeOpts.Unalias` 只给 restore 用）、`agents` 的 INSTALLED 列和 `--json`（`agents.Agent.Detect`）、`doctor --json`。行为见 `docs/design.md` 第 7、8 节。测试：`deploy/alias_test.go`、`deploy/repoinfo_test.go`、`agents/agents_test.go`。别名改名时新链接沿用旧链接的 mode（显式 `--mode` 优先）。
+
 ### 下一步：M4 剩余
 
 交互式选择。第 6 节第 2 条（update 等待 y/N 时持锁）对后台检查已不构成问题（TryLock 跳过），但会阻塞同时运行的前台命令，仍可改进。

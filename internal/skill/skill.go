@@ -68,7 +68,7 @@ func Scan(root string) ([]Found, error) {
 			f.Warnings = append(f.Warnings, "frontmatter has no description; agents may not load it")
 		}
 		if !ValidName(f.Name) {
-			f.Warnings = append(f.Warnings, fmt.Sprintf("name %q is not lowercase-hyphen (1-64 chars); OpenCode will reject it", f.Name))
+			f.Warnings = append(f.Warnings, fmt.Sprintf("name %q is not lowercase-hyphen (1-64 chars); OpenCode will reject it; link it under another name with `skillet enable --as <alias>`", f.Name))
 		}
 		if p != root && f.Name != d.Name() {
 			f.Warnings = append(f.Warnings, fmt.Sprintf("name %q differs from directory %q", f.Name, d.Name()))

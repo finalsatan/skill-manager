@@ -13,6 +13,7 @@ import (
 	"skillet/internal/config"
 	"skillet/internal/deploy"
 	"skillet/internal/link"
+	"skillet/internal/skill"
 	"skillet/internal/state"
 )
 
@@ -152,7 +153,31 @@ func newRepoCmd() *cobra.Command {
 	}
 	remove.Flags().BoolVar(&force, "force", false, "also remove every deployment of its skills")
 
-	cmd.AddCommand(add, list, remove)
+	var showJSON bool
+	show := &cobra.Command{
+		Use:   "show <repo>",
+		Short: "Show a repository's state, pin checkouts and skills",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return withManager(func(m *deploy.Manager) error {
+				id, err := m.ResolveRepo(args[0])
+				if err != nil {
+					return err
+				}
+				info, err := m.RepoInfo(id)
+				if err != nil {
+					return err
+				}
+				if showJSON {
+					return printJSON(cmd.OutOrStdout(), info)
+				}
+				return printRepoInfo(cmd.OutOrStdout(), info)
+			})
+		},
+	}
+	show.Flags().BoolVar(&showJSON, "json", false, "print JSON")
+
+	cmd.AddCommand(add, list, remove, show)
 	return cmd
 }
 
@@ -197,6 +222,11 @@ func newListCmd() *cobra.Command {
 				for _, r := range rows {
 					fmt.Fprintf(w, "%s\t%s\t%d\t%s\n", r.Name, r.Repo, r.Deployments, truncate(r.Description, 60))
 				}
+				for _, r := range rows {
+					if !skill.ValidName(r.Name) {
+						fmt.Fprintf(w, "warning: name %q is not valid for every agent; enable it with --as <alias>\n", r.Name)
+					}
+				}
 				return w.Flush()
 			})
 		},
@@ -222,7 +252,7 @@ func (f *scopeFlags) register(cmd *cobra.Command) {
 func newEnableCmd() *cobra.Command {
 	var sf scopeFlags
 	var agentIDs []string
-	var mode, pin string
+	var mode, pin, alias string
 	var unpin bool
 	var dryRun bool
 	cmd := &cobra.Command{
@@ -238,7 +268,13 @@ The output lists every agent that can see the skill afterwards.
 of the repo's current checkout; updates do not touch pinned links. Enabling
 again keeps the skill's pin in that scope (links added for more agents get it
 too), another --pin re-points all of them and --unpin moves them back to the
-repo's current checkout.`,
+repo's current checkout.
+
+--as <alias> names the link <alias> instead of the skill's name, for a name that
+some agent rejects or that clashes with another skill. It takes exactly one
+skill. Enabling again without --as keeps the alias; another --as renames the
+links (shown by --dry-run); --as with the skill's own name drops it. Updates
+do not rename an aliased link.`,
 		Args: cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			s, err := deploy.ResolveScope(sf.global, sf.dir, sf.exact)
@@ -252,7 +288,7 @@ repo's current checkout.`,
 				}
 			}
 			return withManager(func(m *deploy.Manager) error {
-				res, err := m.Enable(deploy.ChangeOpts{Skills: args, Agents: agentIDs, Scope: s, Mode: lm, Pin: pin, Unpin: unpin, DryRun: dryRun})
+				res, err := m.Enable(deploy.ChangeOpts{Skills: args, Agents: agentIDs, Scope: s, Mode: lm, Pin: pin, Unpin: unpin, Alias: alias, DryRun: dryRun})
 				printResults(cmd, m, res, s, dryRun)
 				if err == nil && !dryRun {
 					err = syncManifest(cmd, m, s)
@@ -267,6 +303,7 @@ repo's current checkout.`,
 	cmd.Flags().StringVar(&pin, "pin", "", "pin to a git revision (sha, tag or branch) of the skill's repo")
 	cmd.Flags().BoolVar(&unpin, "unpin", false, "move pinned links back to the repo's current checkout")
 	cmd.MarkFlagsMutuallyExclusive("pin", "unpin")
+	cmd.Flags().StringVar(&alias, "as", "", "link name to use instead of the skill's name (one skill only)")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "show what would change")
 	cmd.MarkFlagRequired("agent")
 	return cmd
@@ -351,12 +388,20 @@ func pinSuffix(pin string) string {
 
 func newStatusCmd() *cobra.Command {
 	var sf scopeFlags
-	var asJSON, long bool
+	var asJSON, long, all bool
 	cmd := &cobra.Command{
 		Use:   "status",
 		Short: "Show the skills each agent sees in a project (or globally)",
-		Args:  cobra.NoArgs,
+		Long: `Show the skills each agent sees in a project (or globally).
+
+--all shows every scope that has deployments: the global one and each project
+directory skillet has linked into. Project directories that no longer exist are
+skipped with a note.`,
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			if all {
+				return withManager(func(m *deploy.Manager) error { return runStatusAll(cmd, m, long, asJSON) })
+			}
 			s, err := deploy.ResolveScope(sf.global, sf.dir, sf.exact)
 			if err != nil {
 				return err
@@ -369,30 +414,30 @@ func newStatusCmd() *cobra.Command {
 				if asJSON {
 					return printJSON(cmd.OutOrStdout(), entries)
 				}
-				out := cmd.OutOrStdout()
-				fmt.Fprintf(out, "Scope: %s\n", display(deploy.ScopeLabel(s), agents.Scope{Global: true}))
-				if len(entries) == 0 {
-					fmt.Fprintln(out, "No skills visible to any agent.")
-					return nil
-				}
-				if long {
-					return printStatusLong(out, entries, s)
-				}
-				return printStatusMatrix(out, m.Agents.All(), entries)
+				return printScopeStatus(cmd.OutOrStdout(), m, s, entries, long)
 			})
 		},
 	}
 	sf.register(cmd)
+	cmd.Flags().BoolVar(&all, "all", false, "every scope with deployments: global and all known projects")
+	cmd.MarkFlagsMutuallyExclusive("all", "dir")
+	cmd.MarkFlagsMutuallyExclusive("all", "global")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "print JSON")
 	cmd.Flags().BoolVarP(&long, "long", "l", false, "one line per agent and link path")
 	return cmd
 }
 
 func newAgentsCmd() *cobra.Command {
-	return &cobra.Command{
+	var asJSON bool
+	cmd := &cobra.Command{
 		Use:   "agents",
-		Short: "List supported agents and the directories they read",
-		Args:  cobra.NoArgs,
+		Short: "List supported agents, the directories they read and whether they are installed",
+		Long: `List supported agents, the directories they read and whether they are installed.
+
+INSTALLED is "yes" when the agent's binary is on PATH or its config directory
+exists, "no" when neither is found, and "-" for custom agents, which have
+nothing to detect them by.`,
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			// Works before `skillet init`: only the config's custom agents matter.
 			var custom []config.CustomAgent
@@ -407,26 +452,56 @@ func newAgentsCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			w := table(cmd.OutOrStdout())
-			fmt.Fprintln(w, "AGENT\tPROJECT DIR\tGLOBAL DIR\tALSO READS")
+			g := agents.Scope{Global: true}
+			type row struct {
+				ID           string   `json:"id"`
+				Name         string   `json:"name,omitempty"`
+				ProjectDir   string   `json:"project_dir"`
+				GlobalDir    string   `json:"global_dir"`
+				ProjectReads []string `json:"project_reads"`
+				GlobalReads  []string `json:"global_reads"`
+				Installed    *bool    `json:"installed"`              // null when it cannot be detected
+				DetectedVia  string   `json:"detected_via,omitempty"` // binary path or config directory
+			}
+			var rows []row
 			for _, a := range reg.All() {
+				r := row{ID: a.ID, Name: a.Name, ProjectDir: a.ProjectDir, GlobalDir: a.GlobalDir, ProjectReads: a.ProjectReads, GlobalReads: a.GlobalReads}
+				if in := a.Detect(); in.Known {
+					r.Installed, r.DetectedVia = &in.Found, in.Via
+				}
+				rows = append(rows, r)
+			}
+			if asJSON {
+				return printJSON(cmd.OutOrStdout(), rows)
+			}
+			w := table(cmd.OutOrStdout())
+			fmt.Fprintln(w, "AGENT\tINSTALLED\tPROJECT DIR\tGLOBAL DIR\tALSO READS")
+			for i, a := range reg.All() {
 				var also []string
 				for _, r := range a.ProjectReads {
 					if r != a.ProjectDir {
 						also = append(also, r)
 					}
 				}
-				g := agents.Scope{Global: true}
 				for _, r := range a.GlobalReads {
 					if r != a.GlobalDir {
 						also = append(also, display(r, g))
 					}
 				}
-				fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", a.ID, a.ProjectDir, display(a.GlobalDir, g), strings.Join(also, ", "))
+				installed := "-"
+				if rows[i].Installed != nil {
+					installed = "no"
+					if *rows[i].Installed {
+						installed = "yes"
+					}
+				}
+				fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", a.ID, installed, a.ProjectDir, display(a.GlobalDir, g), strings.Join(also, ", "))
 			}
 			return w.Flush()
 		},
 	}
+	cmd.Flags().BoolVar(&asJSON, "json", false, "print JSON")
+	return cmd
 }
 
 func truncate(s string, n int) string {

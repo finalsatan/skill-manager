@@ -18,8 +18,9 @@ type Entry struct {
 	Path   string `json:"path"`
 	Skill  string `json:"skill,omitempty"` // empty when not managed by skillet
 	Mode   string `json:"mode,omitempty"`
-	Pin    string `json:"pin,omitempty"` // commit the link is pinned to
-	Health string `json:"health"`        // ok, missing, broken, wrong-target, modified, outdated, unmanaged
+	Pin    string `json:"pin,omitempty"`   // commit the link is pinned to
+	Alias  string `json:"alias,omitempty"` // set when the link was renamed with `enable --as`
+	Health string `json:"health"`          // ok, missing, broken, wrong-target, modified, outdated, unmanaged
 	// Pending is set when upstream has changes for this skill not yet applied.
 	Pending bool `json:"pending,omitempty"`
 }
@@ -48,7 +49,7 @@ func (m *Manager) Status(s agents.Scope) ([]Entry, error) {
 					h = m.Health(d)
 					health[p] = h
 				}
-				out = append(out, Entry{Agent: a.ID, Name: e.Name(), Path: p, Skill: d.Skill, Mode: d.Mode, Pin: d.Pin, Health: h, Pending: d.Pin == "" && m.pending(d.Skill)})
+				out = append(out, Entry{Agent: a.ID, Name: e.Name(), Path: p, Skill: d.Skill, Mode: d.Mode, Pin: d.Pin, Alias: d.Alias, Health: h, Pending: d.Pin == "" && m.pending(d.Skill)})
 			}
 		}
 	}
@@ -62,7 +63,7 @@ func (m *Manager) Status(s agents.Scope) ([]Entry, error) {
 			continue
 		}
 		for _, id := range d.Agents {
-			out = append(out, Entry{Agent: id, Name: filepath.Base(d.Target), Path: d.Target, Skill: d.Skill, Mode: d.Mode, Pin: d.Pin, Health: "missing"})
+			out = append(out, Entry{Agent: id, Name: filepath.Base(d.Target), Path: d.Target, Skill: d.Skill, Mode: d.Mode, Pin: d.Pin, Alias: d.Alias, Health: "missing"})
 		}
 	}
 	order := map[string]int{}
@@ -119,4 +120,41 @@ func (m *Manager) pending(id string) bool {
 func isSkillDir(p string) bool {
 	_, err := os.Stat(filepath.Join(p, skill.FileName))
 	return err == nil
+}
+
+// ScopeSet is the scopes that have deployments, plus project directories
+// that were deployed to but no longer exist.
+type ScopeSet struct {
+	Scopes  []agents.Scope // global first, then projects sorted by directory
+	Missing []string
+}
+
+// DeployedScopes lists every scope with at least one deployment.
+func (m *Manager) DeployedScopes() ScopeSet {
+	var set ScopeSet
+	global := false
+	dirs := map[string]bool{}
+	for _, d := range m.St.Deployments {
+		if d.Scope == state.ScopeGlobal {
+			global = true
+		} else if d.Scope == state.ScopeProject {
+			dirs[d.Dir] = true
+		}
+	}
+	if global {
+		set.Scopes = append(set.Scopes, agents.Scope{Global: true})
+	}
+	var sorted []string
+	for dir := range dirs {
+		sorted = append(sorted, dir)
+	}
+	sort.Strings(sorted)
+	for _, dir := range sorted {
+		if dirExists(dir) {
+			set.Scopes = append(set.Scopes, agents.Scope{Dir: dir})
+		} else {
+			set.Missing = append(set.Missing, dir)
+		}
+	}
+	return set
 }

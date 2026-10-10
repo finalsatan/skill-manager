@@ -12,6 +12,7 @@ import (
 
 	"github.com/BurntSushi/toml"
 
+	"skillet/internal/skill"
 	"skillet/internal/state"
 )
 
@@ -32,6 +33,7 @@ type Skill struct {
 	ID     string   `toml:"id"`
 	Agents []string `toml:"agents"`
 	Pin    string   `toml:"pin,omitempty"` // full commit sha; empty follows the repo
+	As     string   `toml:"as,omitempty"`  // link name override (`enable --as`)
 }
 
 type Manifest struct {
@@ -59,6 +61,7 @@ func Build(repos map[string]*state.Repo, deps []*state.Deployment, order []strin
 	type entry struct {
 		agents map[string]bool
 		pin    string
+		alias  string
 	}
 	skills := map[string]*entry{}
 	for _, d := range deps {
@@ -73,11 +76,14 @@ func Build(repos map[string]*state.Repo, deps []*state.Deployment, order []strin
 		if e.pin == "" {
 			e.pin = d.Pin
 		}
+		if e.alias == "" {
+			e.alias = d.Alias
+		}
 	}
 	m := &Manifest{}
 	used := map[string]bool{}
 	for id, e := range skills {
-		s := Skill{ID: id, Pin: e.pin}
+		s := Skill{ID: id, Pin: e.pin, As: e.alias}
 		for a := range e.agents {
 			s.Agents = append(s.Agents, a)
 		}
@@ -171,6 +177,8 @@ func (m *Manifest) Validate() error {
 			return fmt.Errorf("skill %s has no agents", s.ID)
 		case strings.HasPrefix(s.Pin, "-"):
 			return fmt.Errorf("skill %s: invalid pin %q", s.ID, s.Pin)
+		case s.As != "" && !skill.ValidName(s.As):
+			return fmt.Errorf("skill %s: invalid alias %q (lowercase letters, digits and hyphens, 1-64 chars)", s.ID, s.As)
 		}
 		seen[s.ID] = true
 	}

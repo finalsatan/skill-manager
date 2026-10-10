@@ -74,6 +74,7 @@ reads = [".hermes/skills"]
       "target": "/home/u/work/projA/.claude/skills/pdf",
       "mode": "symlink",            // symlink | junction | copy
       "pin": "",                    // 固定版本时为 sha
+      "alias": "",                  // enable --as 指定的链接名；空表示用 skill 自己的名字
       "source_hash": "",            // copy 模式下记录内容哈希
       "created_at": "…"
     }
@@ -202,6 +203,7 @@ branch = "main"
 id = "github.com/anthropics/skills:skills/pdf"
 agents = ["claude", "codex"]
 pin = "<完整 sha>"     # 未固定时省略
+as = "<别名>"          # enable --as 指定的链接名；没有别名时省略
 ```
 
 - `agents` 是该 skill 在本项目里被请求的 agent（本 scope 内它所有部署的 `Agents` 之并集），按注册表顺序。链接模式、路径与机器相关，不记录。repo 按 id、skill 按 id 排序，diff 稳定。本地路径仓库（id 为 `local/…`）照写，`save` 会警告队友无法 clone。
@@ -210,7 +212,7 @@ pin = "<完整 sha>"     # 未固定时省略
 - `skillet restore [--dir d] [--exact] [--dry-run] [--prune]`（`deploy/restore.go`）：
   1. 先校验清单里的 agent 名；有误则整个命令报错、不改任何东西。
   2. 清单里的 repo 不在 store 时用 `AddRepo(url, branch)` clone，结果 id 必须等于清单 id，否则撤销刚 clone 的仓库并报错；已存在但分支不同只警告。
-  3. 每个 skill 一次计划：agent 集合精确等于清单（多出的 agent 被停用），有 `pin` 就固定，没有就 `--unpin`，所以还原后状态与清单一致，重复执行无变化。pin 在本地 clone 里找不到时 `git fetch origin <branch>` 后重试一次。
+  3. 每个 skill 一次计划：agent 集合精确等于清单（多出的 agent 被停用），有 `pin` 就固定，没有就 `--unpin`，有 `as` 就用该链接名，没有就去掉本地的别名，所以还原后状态与清单一致，重复执行无变化。pin 在本地 clone 里找不到时 `git fetch origin <branch>` 后重试一次。
   4. 清单里的 skill 在仓库中不存在、repo clone 失败等不会中断：记入 problems，继续其他 skill，最后以非零退出。
   5. 本项目已启用但不在清单里的 skill：默认只列出（`not in skillet.toml (kept; --prune to remove)`），`--prune` 才停用。
   6. `--dry-run` 什么都不改，也不 clone：打印 `Would clone <url>`，并跳过尚未 clone 的仓库里的 skill。
@@ -221,30 +223,38 @@ pin = "<完整 sha>"     # 未固定时省略
 ```
 skillet init [--store <dir>]                       # 生成配置，创建 store
 skillet repo add <url | owner/repo> [--branch b]   # clone，扫描 SKILL.md
-skillet repo list | remove <repo> | show <repo>
+skillet repo list | remove <repo> | show <repo> [--json]   # show：地址/分支/HEAD/上游落后数/pin 检出/各 skill 及部署位置
 skillet list [--repo <repo>]                       # 列出可用 skill
-skillet enable <skill…> --agent a,b [--dir <path> | --global] [--pin <rev>] [--mode …]
+skillet enable <skill…> --agent a,b [--dir <path> | --global] [--pin <rev>] [--as <alias>] [--mode …]
 skillet disable <skill…> [--agent a,b] [--dir <path> | --global]
 skillet status [--dir <path> | --global | --all]   # 当前目录各 agent 生效了什么
 skillet save [--dir <path>]                        # 把项目当前的 skill 写成 skillet.toml
 skillet restore [--dir <path>] [--dry-run] [--prune]   # 按 skillet.toml 还原
 skillet check [--notify] [--quiet]
 skillet update [repo…] [--yes] [--diff]
-skillet doctor [--fix]                             # 失效链接、重名、目录已删除的项目、未受管目录
-skillet agents                                     # 适配器表及检测到的安装情况
+skillet doctor [--fix] [--json]                             # 失效链接、重名、目录已删除的项目、未受管目录
+skillet agents [--json]                              # 适配器表及检测到的安装情况（INSTALLED 列）
 skillet schedule install [--every 6h] | remove
 skillet hook claude
 ```
 
 - skill 引用：唯一时直接写 `pdf`；重名时写 `anthropics/skills/pdf` 或完整 id。
 - `--dir` 默认当前目录，并向上找 git 根作为项目目录（`--no-git-root` 关闭）。
-- 所有会改文件系统的命令支持 `--dry-run`，查询类命令支持 `--json`。
+- 所有会改文件系统的命令支持 `--dry-run`，查询类命令（`list`、`repo list/show`、`status`、`check`、`doctor`、`agents`）支持 `--json`。
+- `status --all`（与 `--dir`/`--global` 互斥）依次打印每个有部署记录的 scope：先全局，再各项目目录（按路径排序）；目录已不存在的项目跳过并提示（`doctor --fix` 会忘掉它）。`--json` 输出 `[{scope, dir, missing?, entries}]`。
+- `repo show` 不联网：上游落后数来自上次 `check` 记录的 `upstream`（与 `diffRepo` 同一逻辑），skill 列表和警告来自对 clone 的重新扫描。
+- `agents` 的 INSTALLED：内置 agent 的二进制（`claude`、`codex`、`opencode`、`pi`）在 PATH 上，或配置目录存在（`$CLAUDE_CONFIG_DIR`/`~/.claude`、`$CODEX_HOME`/`~/.codex`、`$XDG_CONFIG_HOME/opencode`、`~/.pi` 或 `$PI_CODING_AGENT_DIR`）即为 `yes`，都没有为 `no`；自定义 agent 没有可检测的信息，显示 `-`（JSON 为 `installed: null`）。
 
 ## 8. Skill 扫描与校验
 
 - 在仓库内递归查找 `SKILL.md`，跳过 `.git`、`node_modules`；找到后不再向下递归。
 - 解析 YAML frontmatter：`name` 必填，作为链接名；`description` 必填。
-- 名字按最严的 OpenCode 规则校验：`^[a-z0-9]+(-[a-z0-9]+)*$`，1–64 字符。不合规时警告，并允许 `enable --as <别名>`。
+- 名字按最严的 OpenCode 规则校验：`^[a-z0-9]+(-[a-z0-9]+)*$`，1–64 字符。不合规时警告（`list`、`repo add`、`repo show` 都会提示），并允许 `enable --as <别名>`。
+- `enable <skill> --as <alias>`：用别名作链接名，用于 frontmatter 名字不合规，或与别的 skill 重名（`status`/`doctor` 的 clash 提示里也会建议）。只允许一个 skill 参数，别名要通过 `skill.ValidName`。别名存在该 scope 内这个 skill 所有部署的 `Deployment.Alias` 里：
+  - 再次 `enable` 不带 `--as` 沿用别名（规划时链接名取现有部署的别名而不是 `sk.Name`），为新 agent 建的链接也用它；`disable` 重新规划同理，`disable` 也可以直接写别名。
+  - 另一个 `--as` 改名：旧链接 `remove`、新链接 `create`，在 `--dry-run` 里可见；新名字已被别的 skill 占用则整个命令拒绝。`--as` 取 skill 自己的名字等于去掉别名。
+  - `update`：skill 在上游改名时不重命名带别名的链接；skill 目录被移动时按旧名字（rescan 之前记下）找到新目录并保留别名。
+  - `skillet.toml` 记 `as`，`restore` 应用它（清单里没有 `as` 则去掉本地别名）。
 - frontmatter `name` 与目录名不一致时警告（OpenCode 要求一致，链接名用 `name` 就自然满足）。
 
 ## 9. 代码结构

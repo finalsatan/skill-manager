@@ -46,6 +46,7 @@ type Deployment struct {
 	Target     string    `json:"target"`
 	Mode       string    `json:"mode"`
 	Pin        string    `json:"pin,omitempty"`
+	Alias      string    `json:"alias,omitempty"` // link name chosen with `enable --as`; empty means the skill's own name
 	SourceHash string    `json:"source_hash,omitempty"`
 	CreatedAt  time.Time `json:"created_at"`
 }

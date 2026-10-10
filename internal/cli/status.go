@@ -6,6 +6,8 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/spf13/cobra"
+
 	"skillet/internal/agents"
 	"skillet/internal/deploy"
 )
@@ -22,6 +24,71 @@ type statusRow struct {
 	visible map[string]int
 	health  string
 	pending bool
+}
+
+// printScopeStatus prints one scope's status in the matrix or long layout.
+func printScopeStatus(out io.Writer, m *deploy.Manager, s agents.Scope, entries []deploy.Entry, long bool) error {
+	fmt.Fprintf(out, "Scope: %s\n", display(deploy.ScopeLabel(s), agents.Scope{Global: true}))
+	if len(entries) == 0 {
+		fmt.Fprintln(out, "No skills visible to any agent.")
+		return nil
+	}
+	if long {
+		return printStatusLong(out, entries, s)
+	}
+	return printStatusMatrix(out, m.Agents.All(), entries)
+}
+
+// scopeStatus is one scope's entries in `status --all --json`.
+type scopeStatus struct {
+	Scope   string         `json:"scope"` // "global" or "project"
+	Dir     string         `json:"dir,omitempty"`
+	Missing bool           `json:"missing,omitempty"` // the project directory no longer exists
+	Entries []deploy.Entry `json:"entries"`
+}
+
+// runStatusAll prints the status of every scope that has deployments.
+func runStatusAll(cmd *cobra.Command, m *deploy.Manager, long, asJSON bool) error {
+	out := cmd.OutOrStdout()
+	set := m.DeployedScopes()
+	if asJSON {
+		res := []scopeStatus{}
+		for _, s := range set.Scopes {
+			entries, err := m.Status(s)
+			if err != nil {
+				return err
+			}
+			ss := scopeStatus{Scope: "project", Dir: s.Dir, Entries: entries}
+			if s.Global {
+				ss.Scope = "global"
+			}
+			res = append(res, ss)
+		}
+		for _, dir := range set.Missing {
+			res = append(res, scopeStatus{Scope: "project", Dir: dir, Missing: true, Entries: []deploy.Entry{}})
+		}
+		return printJSON(out, res)
+	}
+	if len(set.Scopes) == 0 && len(set.Missing) == 0 {
+		fmt.Fprintln(out, "No skills are enabled anywhere.")
+		return nil
+	}
+	for i, s := range set.Scopes {
+		entries, err := m.Status(s)
+		if err != nil {
+			return err
+		}
+		if i > 0 {
+			fmt.Fprintln(out)
+		}
+		if err := printScopeStatus(out, m, s, entries, long); err != nil {
+			return err
+		}
+	}
+	for _, dir := range set.Missing {
+		fmt.Fprintf(out, "\nnote: skipped %s, the directory no longer exists (`skillet doctor --fix` forgets it)\n", dir)
+	}
+	return nil
 }
 
 // printStatusMatrix prints one row per skill and one column per agent. A cell
@@ -90,6 +157,7 @@ func printStatusMatrix(out io.Writer, all []agents.Agent, entries []deploy.Entry
 
 	for _, c := range deploy.Clashes(entries) {
 		fmt.Fprintf(out, "warning: %s sees %d different skills named %q\n", c.Agent, len(c.Paths), c.Name)
+		fmt.Fprintf(out, "         rename one link with `skillet enable <skill> -a %s --as <alias>`\n", c.Agent)
 	}
 	for _, k := range keys {
 		if r := rows[k]; r.health == "missing" || r.health == "broken" {

@@ -5,6 +5,7 @@ package agents
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -23,6 +24,39 @@ type Agent struct {
 	GlobalDir    string   // absolute
 	ProjectReads []string // relative to the project root
 	GlobalReads  []string // absolute
+
+	// Binary and ConfigDirs are only used to detect whether the agent is
+	// installed; custom agents have neither.
+	Binary     string
+	ConfigDirs []string // absolute
+}
+
+// Install is the result of looking for an agent on this machine.
+type Install struct {
+	Known bool   // false when the agent has nothing to detect it by
+	Found bool   // a binary on PATH or an existing config directory
+	Via   string // what was found: the binary's path or the config directory
+}
+
+// Detect looks for the agent's binary on PATH, then for its config directory.
+func (a Agent) Detect() Install {
+	if a.Binary == "" && len(a.ConfigDirs) == 0 {
+		return Install{}
+	}
+	in := Install{Known: true}
+	if a.Binary != "" {
+		if p, err := exec.LookPath(a.Binary); err == nil {
+			in.Found, in.Via = true, p
+			return in
+		}
+	}
+	for _, d := range a.ConfigDirs {
+		if fi, err := os.Stat(d); err == nil && fi.IsDir() {
+			in.Found, in.Via = true, d
+			return in
+		}
+	}
+	return in
 }
 
 func envOr(key, fallback string) string {
@@ -43,6 +77,7 @@ func Builtin() ([]Agent, error) {
 	claudeHome := envOr("CLAUDE_CONFIG_DIR", filepath.Join(home, ".claude"))
 	piHome := envOr("PI_CODING_AGENT_DIR", filepath.Join(home, ".pi", "agent"))
 	xdgConfig := envOr("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+	codexHome := envOr("CODEX_HOME", filepath.Join(home, ".codex"))
 	userAgents := filepath.Join(home, ".agents", "skills")
 	userClaude := filepath.Join(claudeHome, "skills")
 
@@ -52,25 +87,29 @@ func Builtin() ([]Agent, error) {
 			ProjectDir: ".claude/skills", GlobalDir: userClaude,
 			ProjectReads: []string{".claude/skills"},
 			GlobalReads:  []string{userClaude},
+			Binary:       "claude", ConfigDirs: []string{claudeHome},
 		},
 		{
 			ID: "codex", Name: "Codex",
 			ProjectDir: ".agents/skills", GlobalDir: userAgents,
 			ProjectReads: []string{".agents/skills"},
 			// ~/.codex/skills is the legacy location Codex still reads.
-			GlobalReads: []string{userAgents, filepath.Join(envOr("CODEX_HOME", filepath.Join(home, ".codex")), "skills")},
+			GlobalReads: []string{userAgents, filepath.Join(codexHome, "skills")},
+			Binary:      "codex", ConfigDirs: []string{codexHome},
 		},
 		{
 			ID: "opencode", Name: "OpenCode",
 			ProjectDir: ".opencode/skills", GlobalDir: filepath.Join(xdgConfig, "opencode", "skills"),
 			ProjectReads: []string{".opencode/skills", ".claude/skills", ".agents/skills"},
 			GlobalReads:  []string{filepath.Join(xdgConfig, "opencode", "skills"), userClaude, userAgents},
+			Binary:       "opencode", ConfigDirs: []string{filepath.Join(xdgConfig, "opencode")},
 		},
 		{
 			ID: "pi", Name: "pi",
 			ProjectDir: ".pi/skills", GlobalDir: filepath.Join(piHome, "skills"),
 			ProjectReads: []string{".pi/skills", ".agents/skills"},
 			GlobalReads:  []string{filepath.Join(piHome, "skills"), userAgents},
+			Binary:       "pi", ConfigDirs: []string{filepath.Join(home, ".pi"), piHome},
 		},
 	}, nil
 }

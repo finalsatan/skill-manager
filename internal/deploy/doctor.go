@@ -1,6 +1,7 @@
 package deploy
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -63,12 +64,25 @@ func Clashes(entries []Entry) []Clash {
 
 // Issue is one problem found by Doctor.
 type Issue struct {
-	Kind   string // repo-missing, orphan, orphan-pin, pin-missing, project-gone, missing, broken, wrong-target, outdated, modified, clash, pending
-	Target string
-	Detail string
-	Paths  []string // extra paths involved (clashes)
-	Fixed  bool
-	Err    error // set when a fix was attempted and failed
+	Kind   string   `json:"kind"` // repo-missing, orphan, orphan-pin, pin-missing, project-gone, missing, broken, wrong-target, outdated, modified, clash, pending
+	Target string   `json:"target,omitempty"`
+	Detail string   `json:"detail"`
+	Paths  []string `json:"paths,omitempty"` // extra paths involved (clashes)
+	Fixed  bool     `json:"fixed"`
+	Err    error    `json:"-"` // set when a fix was attempted and failed
+}
+
+// MarshalJSON adds the fix error as a string.
+func (i Issue) MarshalJSON() ([]byte, error) {
+	type plain Issue
+	v := struct {
+		plain
+		Error string `json:"error,omitempty"`
+	}{plain: plain(i)}
+	if i.Err != nil {
+		v.Error = i.Err.Error()
+	}
+	return json.Marshal(v)
 }
 
 // Doctor checks repos, deployments and name clashes. With fix it repairs
@@ -110,7 +124,7 @@ func (m *Manager) Doctor(fix bool) ([]Issue, error) {
 		}
 		for _, c := range Clashes(entries) {
 			issues = append(issues, Issue{Kind: "clash", Target: ScopeLabel(s), Paths: c.Paths,
-				Detail: fmt.Sprintf("%s sees %d different skills named %q", c.Agent, len(c.Paths), c.Name)})
+				Detail: fmt.Sprintf("%s sees %d different skills named %q; rename one link with `skillet enable <skill> --as <alias>`", c.Agent, len(c.Paths), c.Name)})
 		}
 	}
 

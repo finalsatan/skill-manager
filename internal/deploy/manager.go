@@ -112,6 +112,19 @@ func (m *Manager) resolveSkill(ref string, deployed bool) (string, error) {
 		matches = append(matches, id)
 	}
 	sort.Strings(matches)
+	if len(matches) == 0 {
+		// A link renamed with `enable --as` can be named by its alias.
+		seen := map[string]bool{}
+		for _, d := range m.St.Deployments {
+			if _, ok := cands[d.Skill]; ok && d.Alias == name && !seen[d.Skill] {
+				if repoSuffix == "" || cands[d.Skill].repo == repoSuffix || strings.HasSuffix(cands[d.Skill].repo, "/"+repoSuffix) {
+					seen[d.Skill] = true
+					matches = append(matches, d.Skill)
+				}
+			}
+		}
+		sort.Strings(matches)
+	}
 	switch len(matches) {
 	case 0:
 		return "", fmt.Errorf("no skill matches %q (see `skillet list`)", ref)

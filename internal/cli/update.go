@@ -251,7 +251,7 @@ func indent(s string) string {
 }
 
 func newDoctorCmd() *cobra.Command {
-	var fix bool
+	var fix, asJSON bool
 	cmd := &cobra.Command{
 		Use:   "doctor",
 		Short: "Find broken links, deleted projects, unused pin checkouts and name clashes",
@@ -263,43 +263,22 @@ func newDoctorCmd() *cobra.Command {
 					return err
 				}
 				out := cmd.OutOrStdout()
-				open := 0
-				fixable := 0
-				for _, is := range issues {
-					mark := "!"
-					switch {
-					case is.Fixed:
-						mark = "fixed"
-					case is.Err != nil:
-						mark = "failed"
-					case is.Kind == "pending":
-						mark = "i"
+				open, fixable := countIssues(issues)
+				switch {
+				case asJSON:
+					if issues == nil {
+						issues = []deploy.Issue{}
 					}
-					target := ""
-					if is.Target != "" {
-						target = display(is.Target, agents.Scope{Global: true}) + ": "
+					if err := printJSON(out, issues); err != nil {
+						return err
 					}
-					fmt.Fprintf(out, "[%s] %s  %s%s\n", mark, is.Kind, target, is.Detail)
-					for _, p := range is.Paths {
-						fmt.Fprintf(out, "      %s\n", display(p, agents.Scope{Global: true}))
-					}
-					if is.Err != nil {
-						fmt.Fprintf(out, "      %v\n", is.Err)
-					}
-					if !is.Fixed && is.Kind != "pending" {
-						open++
-						switch is.Kind {
-						case "orphan", "orphan-pin", "pin-missing", "project-gone", "missing", "broken", "wrong-target", "outdated":
-							fixable++
-						}
-					}
-				}
-				if len(issues) == 0 {
+				case len(issues) == 0:
 					fmt.Fprintln(out, "No problems found.")
-					return nil
-				}
-				if !fix && fixable > 0 {
-					fmt.Fprintf(out, "\nRun `skillet doctor --fix` to repair %d of them.\n", fixable)
+				default:
+					printIssues(out, issues)
+					if !fix && fixable > 0 {
+						fmt.Fprintf(out, "\nRun `skillet doctor --fix` to repair %d of them.\n", fixable)
+					}
 				}
 				if open > 0 {
 					return fmt.Errorf("%d problem(s) need attention", open)
@@ -309,5 +288,47 @@ func newDoctorCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVar(&fix, "fix", false, "repair links, re-copy stale copies and forget deleted projects")
+	cmd.Flags().BoolVar(&asJSON, "json", false, "print JSON")
 	return cmd
+}
+
+// countIssues returns how many issues are still open (information excluded)
+// and how many of those `doctor --fix` can repair.
+func countIssues(issues []deploy.Issue) (open, fixable int) {
+	for _, is := range issues {
+		if is.Fixed || is.Kind == "pending" {
+			continue
+		}
+		open++
+		switch is.Kind {
+		case "orphan", "orphan-pin", "pin-missing", "project-gone", "missing", "broken", "wrong-target", "outdated":
+			fixable++
+		}
+	}
+	return open, fixable
+}
+
+func printIssues(out io.Writer, issues []deploy.Issue) {
+	for _, is := range issues {
+		mark := "!"
+		switch {
+		case is.Fixed:
+			mark = "fixed"
+		case is.Err != nil:
+			mark = "failed"
+		case is.Kind == "pending":
+			mark = "i"
+		}
+		target := ""
+		if is.Target != "" {
+			target = display(is.Target, agents.Scope{Global: true}) + ": "
+		}
+		fmt.Fprintf(out, "[%s] %s  %s%s\n", mark, is.Kind, target, is.Detail)
+		for _, p := range is.Paths {
+			fmt.Fprintf(out, "      %s\n", display(p, agents.Scope{Global: true}))
+		}
+		if is.Err != nil {
+			fmt.Fprintf(out, "      %v\n", is.Err)
+		}
+	}
 }

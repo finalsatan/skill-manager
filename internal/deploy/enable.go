@@ -37,13 +37,15 @@ type Result struct {
 }
 
 type ChangeOpts struct {
-	Skills []string // skill refs
-	Agents []string // agent ids; for Disable empty means all
-	Scope  agents.Scope
-	Mode   link.Mode // Enable only; empty uses the config default
-	Pin    string    // Enable only; a git revision to pin to; empty keeps the current pin
-	Unpin  bool      // Enable only; move pinned links back to the main clone
-	DryRun bool
+	Skills  []string // skill refs
+	Agents  []string // agent ids; for Disable empty means all
+	Scope   agents.Scope
+	Mode    link.Mode // Enable only; empty uses the config default
+	Pin     string    // Enable only; a git revision to pin to; empty keeps the current pin
+	Unpin   bool      // Enable only; move pinned links back to the main clone
+	Alias   string    // Enable only; link name instead of the skill's name; empty keeps the current one
+	Unalias bool      // Enable only; go back to the skill's own name (restore)
+	DryRun  bool
 }
 
 // Enable makes each skill visible to the requested agents in the scope. With
@@ -59,6 +61,16 @@ func (m *Manager) Enable(o ChangeOpts) ([]Result, error) {
 	}
 	if o.Pin != "" && o.Unpin {
 		return nil, errors.New("--pin and --unpin cannot be combined")
+	}
+	if o.Alias != "" {
+		switch {
+		case len(o.Skills) != 1:
+			return nil, errors.New("--as renames one link, so it needs exactly one skill")
+		case !skill.ValidName(o.Alias):
+			return nil, fmt.Errorf("invalid alias %q: use lowercase letters, digits and single hyphens, 1-64 chars", o.Alias)
+		case o.Unalias:
+			return nil, errors.New("alias and unalias cannot be combined")
+		}
 	}
 	return m.change(o, func(served []string) []string {
 		return append(served, o.Agents...)
@@ -114,7 +126,7 @@ func (m *Manager) change(o ChangeOpts, want func(served []string) []string, reus
 			continue
 		}
 		seen[id] = true
-		p, err := m.planSkill(id, o.Scope, want, reuse, mode, o.Pin, o.Unpin)
+		p, err := m.planSkill(id, o.Scope, want, reuse, mode, o)
 		if err != nil {
 			return nil, err
 		}
@@ -155,11 +167,13 @@ type skillPlan struct {
 	name    string
 	mode    link.Mode
 	pin     string // full sha, or empty to follow the main clone
+	alias   string // link name override, empty when the link is named after the skill
 	wanted  []string
 	actions []Action
 }
 
-func (m *Manager) planSkill(id string, s agents.Scope, want func([]string) []string, reuse bool, mode link.Mode, rev string, unpin bool) (*skillPlan, error) {
+func (m *Manager) planSkill(id string, s agents.Scope, want func([]string) []string, reuse bool, mode link.Mode, o ChangeOpts) (*skillPlan, error) {
+	rev, unpin := o.Pin, o.Unpin
 	var src string
 	sk := m.St.Skills[id]
 	if sk != nil {
@@ -179,12 +193,26 @@ func (m *Manager) planSkill(id string, s agents.Scope, want func([]string) []str
 	}
 	// All links of a skill in a scope share one pin: the existing one unless
 	// Enable is asked to re-pin or unpin.
-	pin, name := "", ""
+	// The link name is likewise shared: an alias given earlier stays unless
+	// Enable names another one, so enabling again without --as keeps it.
+	pin, name, alias := "", "", ""
 	if len(current) > 0 {
-		pin, name = current[0].Pin, filepath.Base(current[0].Target)
+		pin, name, alias = current[0].Pin, filepath.Base(current[0].Target), current[0].Alias
 	}
-	if sk != nil {
+	if sk != nil && alias == "" {
 		name = sk.Name
+	}
+	if reuse && o.Unalias {
+		alias = ""
+		if sk != nil {
+			name = sk.Name
+		}
+	}
+	if reuse && o.Alias != "" {
+		alias, name = o.Alias, o.Alias
+		if sk != nil && alias == sk.Name {
+			alias = "" // the skill's own name needs no override
+		}
 	}
 	switch {
 	case reuse && unpin:
@@ -210,7 +238,7 @@ func (m *Manager) planSkill(id string, s agents.Scope, want func([]string) []str
 		return nil, err
 	}
 
-	p := &skillPlan{id: id, src: src, name: name, mode: mode, pin: pin}
+	p := &skillPlan{id: id, src: src, name: name, mode: mode, pin: pin, alias: alias}
 	for _, a := range wanted {
 		p.wanted = append(p.wanted, a.ID)
 	}
@@ -235,7 +263,17 @@ func (m *Manager) planSkill(id string, s agents.Scope, want func([]string) []str
 		if err := m.checkFree(target, id, src); err != nil {
 			return nil, err
 		}
-		p.actions = append(p.actions, Action{Kind: "create", Skill: id, Target: target, Mode: mode, Agents: pl.Agents, Pin: pin})
+		// A link renamed in place keeps its mode unless --mode says otherwise.
+		cm := mode
+		if o.Mode == "" {
+			for _, d := range current {
+				if agents.SamePath(filepath.Dir(d.Target), pl.Dir) {
+					cm = link.Mode(d.Mode)
+					break
+				}
+			}
+		}
+		p.actions = append(p.actions, Action{Kind: "create", Skill: id, Target: target, Mode: cm, Agents: pl.Agents, Pin: pin})
 	}
 	for _, d := range current {
 		if !keep[d.Target] {
@@ -347,7 +385,7 @@ func (m *Manager) apply(p *skillPlan, s agents.Scope) ([]Action, error) {
 			m.St.RemoveDeployment(a.Target)
 		case "keep":
 			d := m.St.DeploymentAt(a.Target)
-			d.Agents = a.Agents
+			d.Agents, d.Alias = a.Agents, p.alias
 			// Repair a link that was deleted or broken behind our back.
 			if t, err := link.Inspect(a.Target); err == nil && t.Kind == link.Missing {
 				used, hash, err := link.Create(p.src, a.Target, link.Mode(d.Mode), p.id)
@@ -366,19 +404,19 @@ func (m *Manager) apply(p *skillPlan, s agents.Scope) ([]Action, error) {
 			if err != nil {
 				return done, fmt.Errorf("link %s: %w", a.Target, err)
 			}
-			d.Agents, d.Pin, d.Mode, d.SourceHash = a.Agents, p.pin, string(used), hash
+			d.Agents, d.Pin, d.Alias, d.Mode, d.SourceHash = a.Agents, p.pin, p.alias, string(used), hash
 		case "create":
 			if err := link.Remove(a.Target); err != nil { // adoptable leftovers only
 				return done, err
 			}
-			used, hash, err := link.Create(p.src, a.Target, p.mode, p.id)
+			used, hash, err := link.Create(p.src, a.Target, a.Mode, p.id)
 			if err != nil {
 				return done, fmt.Errorf("link %s: %w", a.Target, err)
 			}
 			a.Mode = used
 			m.St.Deployments = append(m.St.Deployments, &state.Deployment{
 				Skill: p.id, Agents: a.Agents, Scope: scope, Dir: dir, Target: a.Target,
-				Mode: string(used), Pin: p.pin, SourceHash: hash, CreatedAt: time.Now().UTC(),
+				Mode: string(used), Pin: p.pin, Alias: p.alias, SourceHash: hash, CreatedAt: time.Now().UTC(),
 			})
 		}
 		done = append(done, a)

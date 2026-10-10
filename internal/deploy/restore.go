@@ -143,7 +143,7 @@ func (m *Manager) restoreRepo(r manifest.Repo, dryRun bool) RepoStep {
 // restoreSkill enables one skill for exactly the manifest's agents and pin.
 // A non-empty note means the skill was skipped in a dry run.
 func (m *Manager) restoreSkill(s manifest.Skill, o RestoreOpts) (Result, string, error) {
-	opts := ChangeOpts{Skills: []string{s.ID}, Agents: s.Agents, Scope: o.Scope, Pin: s.Pin, Unpin: s.Pin == "", DryRun: o.DryRun}
+	opts := ChangeOpts{Skills: []string{s.ID}, Agents: s.Agents, Scope: o.Scope, Pin: s.Pin, Unpin: s.Pin == "", Alias: s.As, Unalias: s.As == "", DryRun: o.DryRun}
 	// want ignores the current agents, so extra ones are dropped.
 	exact := func([]string) []string { return s.Agents }
 	if _, ok := m.St.Skills[s.ID]; !ok {
