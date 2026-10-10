@@ -272,3 +272,22 @@ func TestDoctor(t *testing.T) {
 		t.Errorf("after fix: %+v", after)
 	}
 }
+
+func TestUnnotifiedOncePerUpstream(t *testing.T) {
+	m := setup(t, "auto").m
+	r := m.St.Repos[m.RepoIDs()[0]]
+	c := RepoCheck{Repo: m.RepoIDs()[0], Head: "a", Upstream: "b", Commits: 1}
+	if got := m.Unnotified([]RepoCheck{c}); len(got) != 1 {
+		t.Fatalf("first time: %d", len(got))
+	}
+	if err := m.MarkNotified([]RepoCheck{c}); err != nil {
+		t.Fatal(err)
+	}
+	if r.Notified != "b" || len(m.Unnotified([]RepoCheck{c})) != 0 {
+		t.Fatal("same upstream should not notify again")
+	}
+	c.Upstream = "c"
+	if len(m.Unnotified([]RepoCheck{c})) != 1 {
+		t.Fatal("new upstream should notify")
+	}
+}

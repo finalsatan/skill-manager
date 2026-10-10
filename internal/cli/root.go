@@ -35,15 +35,20 @@ func NewRoot() *cobra.Command {
 		newUpdateCmd(),
 		newDoctorCmd(),
 		newAgentsCmd(),
+		newPendingCmd(),
+		newScheduleCmd(),
+		newHookCmd(),
 	)
 	return root
 }
 
 func Execute() int {
-	if err := NewRoot().Execute(); err != nil {
+	root := NewRoot()
+	if err := root.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		return 1
 	}
+	remind(root, os.Args[1:])
 	return 0
 }
 

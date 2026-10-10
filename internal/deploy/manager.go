@@ -31,12 +31,23 @@ func Open() (*Manager, error) {
 	return OpenWith(cfg)
 }
 
-func OpenWith(cfg *config.Config) (*Manager, error) {
+// OpenTry is Open that returns state.ErrLocked instead of waiting.
+func OpenTry() (*Manager, error) {
+	cfg, err := config.Load()
+	if err != nil {
+		return nil, err
+	}
+	return openWith(cfg, state.TryOpen)
+}
+
+func OpenWith(cfg *config.Config) (*Manager, error) { return openWith(cfg, state.Open) }
+
+func openWith(cfg *config.Config, open func(string) (*state.Handle, error)) (*Manager, error) {
 	reg, err := agents.NewRegistry(cfg.Agents)
 	if err != nil {
 		return nil, err
 	}
-	st, err := state.Open(cfg.Store)
+	st, err := open(cfg.Store)
 	if err != nil {
 		return nil, err
 	}

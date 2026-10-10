@@ -399,3 +399,27 @@ func (m *Manager) PendingCount() int {
 	}
 	return n
 }
+
+// Unnotified returns the checks with upstream changes that no desktop
+// notification has been sent for yet, so a 6-hourly timer does not repeat
+// itself until upstream moves again.
+func (m *Manager) Unnotified(res []RepoCheck) []RepoCheck {
+	var out []RepoCheck
+	for _, c := range res {
+		r := m.St.Repos[c.Repo]
+		if c.Err == nil && !c.UpToDate() && r != nil && r.Notified != c.Upstream {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+// MarkNotified records that the given checks were announced.
+func (m *Manager) MarkNotified(res []RepoCheck) error {
+	for _, c := range res {
+		if r := m.St.Repos[c.Repo]; r != nil {
+			r.Notified = c.Upstream
+		}
+	}
+	return m.St.Save()
+}

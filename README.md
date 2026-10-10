@@ -58,5 +58,5 @@ skill 重名时用 `owner/repo/name` 或完整 id（`skillet list --json` 里的
 
 - [x] M1：init、repo add/list/remove、list、enable/disable、status、agents，三平台链接
 - [x] M2：check / update（按 skill 子目录检测更新、diff 审阅、copy 重新同步）、doctor
-- [ ] M3：定时检查、桌面通知、Claude Code hook
+- [x] M3：被动提醒 + 后台检查、`schedule install/remove`、`check --notify/--quiet`、`pending`、`hook claude`
 - [ ] M4：固定版本（git worktree）、团队共享配置

@@ -155,7 +155,14 @@ mode=auto:
    - Linux：用户级 crontab 或 systemd user timer；通知用 `notify-send`。
    - macOS：`~/Library/LaunchAgents/*.plist`；通知用 `osascript -e 'display notification …'`。
    - Windows：`schtasks /Create`；通知用 PowerShell toast。
-3. **Agent 钩子（可选）**：`skillet hook claude` 输出一段 Claude Code SessionStart hook 配置，会话开始时显示待更新列表。
+3. **Agent 钩子（可选）**：`skillet hook claude` 输出一段 Claude Code SessionStart hook 配置（`matcher: startup|resume`，命令 `skillet pending --hook-json`）。`pending` 只读上次 check 的结果、不联网；有待更新时输出 JSON（`systemMessage` 给用户看，`hookSpecificOutput.additionalContext` 给 Claude），否则无输出。
+
+实现要点：
+- 后台检查（被动提醒触发的 `check --quiet`、定时任务的 `check --notify`）用 `TryLock` 拿状态锁，拿不到就跳过这一轮。
+- 被动提醒只在 stderr 是终端时打印；后台检查的尝试时间记在 `<store>/.last-auto-check`，离线时不会每条命令都起子进程。
+- `--notify` 对每个仓库只在 upstream 提交变化时通知一次（`Repo.Notified`）。
+- `SKILLET_NO_REMIND=1` 关闭被动提醒和后台检查。
+- `schedule install` 会把 `SKILLET_CONFIG_DIR` 等环境变量写进任务；`--dry-run` 只打印将写入的文件和命令。
 
 ### 6.3 应用（`skillet update [repo…]`）
 
@@ -230,5 +237,5 @@ internal/
 
 1. **M1 核心**：init、repo add/list/remove、list、enable/disable/status，三平台链接（symlink / junction / copy）+ 安全替换。
 2. **M2 更新**：check、update（diff 审阅、ff-only、copy 重同步、删除检测）、doctor。
-3. **M3 提醒**：被动检查、schedule、桌面通知、Claude hook。
+3. **M3 提醒**（已完成）：被动检查、schedule、桌面通知、Claude hook。
 4. **M4 增强**：pin（git worktree）、自定义 agent、项目内 `skillet.toml` 供团队还原。

@@ -2,45 +2,109 @@ package cli
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"io"
+	"path"
 	"strings"
 
 	"github.com/spf13/cobra"
 
 	"skillet/internal/agents"
 	"skillet/internal/deploy"
+	"skillet/internal/notify"
+	"skillet/internal/state"
 )
 
 func newCheckCmd() *cobra.Command {
-	var asJSON bool
+	var asJSON, quiet, notifyFlag bool
 	cmd := &cobra.Command{
 		Use:   "check [repo]...",
 		Short: "Fetch repos and report which skills changed upstream",
+		Long: `Fetch repos and report which skills changed upstream.
+
+--quiet prints nothing and --notify shows a desktop notification once per new
+upstream commit. Both are meant for timers: they skip the run instead of
+waiting when another skillet command holds the state lock.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return withManager(func(m *deploy.Manager) error {
-				res, err := m.Check(args)
-				if err != nil {
-					return err
-				}
-				if asJSON {
-					return printJSON(cmd.OutOrStdout(), res)
-				}
-				out := cmd.OutOrStdout()
-				pending := false
-				for _, c := range res {
-					printCheck(out, c)
-					pending = pending || (c.Err == nil && !c.UpToDate())
-				}
-				if pending {
-					fmt.Fprintln(out, "\nRun `skillet update` to review and apply.")
-				}
+			background := quiet || notifyFlag
+			open := deploy.Open
+			if background {
+				open = deploy.OpenTry
+			}
+			m, err := open()
+			if errors.Is(err, state.ErrLocked) {
 				return nil
-			})
+			}
+			if err != nil {
+				return err
+			}
+			defer m.Close()
+			res, err := m.Check(args)
+			if err != nil {
+				return err
+			}
+			if notifyFlag {
+				if err := notifyPending(m, res); err != nil && !quiet {
+					fmt.Fprintln(cmd.ErrOrStderr(), "notify:", err)
+				}
+			}
+			if quiet {
+				return nil
+			}
+			if asJSON {
+				return printJSON(cmd.OutOrStdout(), res)
+			}
+			out := cmd.OutOrStdout()
+			pending := false
+			for _, c := range res {
+				printCheck(out, c)
+				pending = pending || (c.Err == nil && !c.UpToDate())
+			}
+			if pending {
+				fmt.Fprintln(out, "\nRun `skillet update` to review and apply.")
+			}
+			return nil
 		},
 	}
 	cmd.Flags().BoolVar(&asJSON, "json", false, "print JSON")
+	cmd.Flags().BoolVar(&quiet, "quiet", false, "print nothing; never wait for the state lock")
+	cmd.Flags().BoolVar(&notifyFlag, "notify", false, "show a desktop notification for new upstream changes")
 	return cmd
+}
+
+// notifyPending sends one notification covering repos not announced before.
+func notifyPending(m *deploy.Manager, res []deploy.RepoCheck) error {
+	fresh := m.Unnotified(res)
+	if len(fresh) == 0 {
+		return nil
+	}
+	if err := notify.Send("skillet: skill updates available", pendingSummary(fresh)); err != nil {
+		return err
+	}
+	return m.MarkNotified(fresh)
+}
+
+// pendingSummary lists, per repo, the changed skills that are in use first.
+func pendingSummary(res []deploy.RepoCheck) string {
+	var lines []string
+	for _, c := range res {
+		var names []string
+		for _, ch := range c.Changes {
+			names = append(names, ch.Name)
+		}
+		for _, p := range c.NewSkills {
+			names = append(names, "+"+path.Base(p))
+		}
+		line := strings.TrimPrefix(c.Repo, "github.com/") + ": "
+		if len(names) == 0 {
+			line += fmt.Sprintf("%d new commit(s)", c.Commits)
+		} else {
+			line += strings.Join(names, ", ")
+		}
+		lines = append(lines, line)
+	}
+	return strings.Join(lines, "\n") + "\nRun `skillet update` to review."
 }
 
 // printCheck prints a one-repo summary of pending upstream changes.

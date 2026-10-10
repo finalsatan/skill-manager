@@ -25,6 +25,7 @@ type Repo struct {
 	Head        string    `json:"head"`
 	Upstream    string    `json:"upstream,omitempty"`
 	LastChecked time.Time `json:"last_checked,omitempty"`
+	Notified    string    `json:"notified,omitempty"` // upstream commit a desktop notification was already sent for
 }
 
 type Skill struct {
@@ -68,13 +69,32 @@ type Handle struct {
 	lock *flock.Flock
 }
 
-func Open(store string) (*Handle, error) {
+// ErrLocked is returned by TryOpen when another skillet process holds the state.
+var ErrLocked = errors.New("state is locked by another skillet process")
+
+func Open(store string) (*Handle, error) { return open(store, true) }
+
+// TryOpen is Open without waiting: it returns ErrLocked if the state is busy.
+// Background checks use it so they never queue behind an interactive command.
+func TryOpen(store string) (*Handle, error) { return open(store, false) }
+
+func open(store string, wait bool) (*Handle, error) {
 	if err := os.MkdirAll(store, 0o755); err != nil {
 		return nil, err
 	}
 	lk := flock.New(filepath.Join(store, "state.lock"))
-	if err := lk.Lock(); err != nil {
-		return nil, fmt.Errorf("lock state: %w", err)
+	if wait {
+		if err := lk.Lock(); err != nil {
+			return nil, fmt.Errorf("lock state: %w", err)
+		}
+	} else {
+		ok, err := lk.TryLock()
+		if err != nil {
+			return nil, fmt.Errorf("lock state: %w", err)
+		}
+		if !ok {
+			return nil, ErrLocked
+		}
 	}
 	h := &Handle{path: filepath.Join(store, "state.json"), lock: lk}
 	st, err := load(h.path)
@@ -84,6 +104,12 @@ func Open(store string) (*Handle, error) {
 	}
 	h.State = st
 	return h, nil
+}
+
+// Peek reads the state without locking. Writes are atomic renames, so a
+// concurrent writer yields either the old or the new file, never a torn one.
+func Peek(store string) (*State, error) {
+	return load(filepath.Join(store, "state.json"))
 }
 
 func load(path string) (*State, error) {
