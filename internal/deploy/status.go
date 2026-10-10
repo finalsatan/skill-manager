@@ -1,0 +1,121 @@
+package deploy
+
+import (
+	"os"
+	"path/filepath"
+	"sort"
+
+	"skillet/internal/agents"
+	"skillet/internal/link"
+	"skillet/internal/skill"
+	"skillet/internal/state"
+)
+
+// Entry is one skill an agent can see in a scope.
+type Entry struct {
+	Agent  string `json:"agent"`
+	Name   string `json:"name"`
+	Path   string `json:"path"`
+	Skill  string `json:"skill,omitempty"` // empty when not managed by skillet
+	Mode   string `json:"mode,omitempty"`
+	Health string `json:"health"` // ok, missing, broken, wrong-target, modified, outdated, unmanaged
+	// Pending is set when upstream has changes for this skill not yet applied.
+	Pending bool `json:"pending,omitempty"`
+}
+
+// Status lists, per agent, every skill visible in the scope, managed or not.
+func (m *Manager) Status(s agents.Scope) ([]Entry, error) {
+	var out []Entry
+	health := map[string]string{}
+	for _, a := range m.Agents.All() {
+		for _, dir := range a.ReadDirs(s) {
+			entries, err := os.ReadDir(dir)
+			if err != nil {
+				continue
+			}
+			for _, e := range entries {
+				p := filepath.Join(dir, e.Name())
+				d := m.St.DeploymentAt(p)
+				if d == nil {
+					if isSkillDir(p) {
+						out = append(out, Entry{Agent: a.ID, Name: e.Name(), Path: p, Health: "unmanaged"})
+					}
+					continue
+				}
+				h, ok := health[p]
+				if !ok {
+					h = m.Health(d)
+					health[p] = h
+				}
+				out = append(out, Entry{Agent: a.ID, Name: e.Name(), Path: p, Skill: d.Skill, Mode: d.Mode, Health: h, Pending: m.pending(d.Skill)})
+			}
+		}
+	}
+	// Deployments whose link has disappeared do not show up in directory
+	// listings; report them for the agents they were meant to serve.
+	for _, d := range m.St.Deployments {
+		if !inScope(d, s) {
+			continue
+		}
+		if _, err := os.Lstat(d.Target); err == nil {
+			continue
+		}
+		for _, id := range d.Agents {
+			out = append(out, Entry{Agent: id, Name: filepath.Base(d.Target), Path: d.Target, Skill: d.Skill, Mode: d.Mode, Health: "missing"})
+		}
+	}
+	order := map[string]int{}
+	for i, a := range m.Agents.All() {
+		order[a.ID] = i
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].Agent != out[j].Agent {
+			return order[out[i].Agent] < order[out[j].Agent]
+		}
+		return out[i].Name < out[j].Name
+	})
+	return out, nil
+}
+
+// Health checks one deployment against the filesystem.
+func (m *Manager) Health(d *state.Deployment) string {
+	src, err := m.SkillDir(d.Skill)
+	if err != nil {
+		return "broken"
+	}
+	t, err := link.Inspect(d.Target)
+	if err != nil {
+		return "broken"
+	}
+	switch t.Kind {
+	case link.Missing:
+		return "missing"
+	case link.Link:
+		if !t.PointsTo(src) {
+			return "wrong-target"
+		}
+		if _, err := os.Stat(filepath.Join(d.Target, skill.FileName)); err != nil {
+			return "broken"
+		}
+		return "ok"
+	case link.ManagedCopy:
+		if h, err := skill.Hash(d.Target, link.MarkerFile); err == nil && h != t.Marker.Hash {
+			return "modified"
+		}
+		if h, err := skill.Hash(src); err == nil && h != t.Marker.Hash {
+			return "outdated"
+		}
+		return "ok"
+	}
+	return "broken"
+}
+
+func (m *Manager) pending(id string) bool {
+	sk, ok := m.St.Skills[id]
+	return ok && sk.Pending
+}
+
+func isSkillDir(p string) bool {
+	_, err := os.Stat(filepath.Join(p, skill.FileName))
+	return err == nil
+}
