@@ -3,6 +3,7 @@ package cli
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -24,6 +25,7 @@ func NewRoot() *cobra.Command {
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
+	root.PersistentFlags().Bool("no-input", false, "never prompt; fail instead (also SKILLET_NO_INPUT=1 or CI)")
 	root.AddCommand(
 		newInitCmd(),
 		newRepoCmd(),
@@ -47,6 +49,10 @@ func NewRoot() *cobra.Command {
 func Execute() int {
 	root := NewRoot()
 	if err := root.Execute(); err != nil {
+		if errors.Is(err, errAborted) {
+			fmt.Fprintln(os.Stderr, "aborted")
+			return 130
+		}
 		fmt.Fprintln(os.Stderr, "error:", err)
 		return 1
 	}

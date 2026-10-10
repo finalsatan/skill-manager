@@ -254,9 +254,9 @@ func newEnableCmd() *cobra.Command {
 	var agentIDs []string
 	var mode, pin, alias string
 	var unpin bool
-	var dryRun bool
+	var dryRun, yes bool
 	cmd := &cobra.Command{
-		Use:   "enable <skill>... --agent <id,...>",
+		Use:   "enable [<skill>...] [--agent <id,...>]",
 		Short: "Link skills into agents' skill directories",
 		Long: `Link skills into agents' skill directories.
 
@@ -274,9 +274,17 @@ repo's current checkout.
 some agent rejects or that clashes with another skill. It takes exactly one
 skill. Enabling again without --as keeps the alias; another --as renames the
 links (shown by --dry-run); --as with the skill's own name drops it. Updates
-do not rename an aliased link.`,
-		Args: cobra.MinimumNArgs(1),
+do not rename an aliased link.
+
+On a terminal, missing skills or agents are chosen interactively, then the
+plan is shown and confirmed (--yes skips the confirmation). --no-input or
+SKILLET_NO_INPUT=1 turns that off.`,
+		Args: cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			prompt := canPrompt(cmd) && (len(args) == 0 || len(agentIDs) == 0)
+			if len(args) == 0 && !prompt {
+				return errors.New("no skills given; name them, or run on a terminal without --no-input to choose interactively")
+			}
 			s, err := deploy.ResolveScope(sf.global, sf.dir, sf.exact)
 			if err != nil {
 				return err
@@ -288,6 +296,30 @@ do not rename an aliased link.`,
 				}
 			}
 			return withManager(func(m *deploy.Manager) error {
+				if prompt {
+					ch := newChooser()
+					served := m.ServedIn(s)
+					if len(args) == 0 {
+						if args, err = ch.Skills("Skills to enable", skillOptions(m.St.Skills, served, true)); err != nil {
+							return err
+						}
+						if len(args) == 0 {
+							return errors.New("no skills selected")
+						}
+					}
+					if len(agentIDs) == 0 {
+						want := defaultAgents(m.Agents.All(), served, args)
+						if agentIDs, err = ch.Agents("Agents to enable them for", agentOptions(m.Agents.All(), want)); err != nil {
+							return err
+						}
+						if len(agentIDs) == 0 {
+							return errors.New("no agents selected")
+						}
+					}
+					return confirmChange(cmd, m, ch, s, yes, func(dry bool) ([]deploy.Result, error) {
+						return m.Enable(deploy.ChangeOpts{Skills: args, Agents: agentIDs, Scope: s, Mode: lm, Pin: pin, Unpin: unpin, Alias: alias, DryRun: dry || dryRun})
+					}, dryRun)
+				}
 				res, err := m.Enable(deploy.ChangeOpts{Skills: args, Agents: agentIDs, Scope: s, Mode: lm, Pin: pin, Unpin: unpin, Alias: alias, DryRun: dryRun})
 				printResults(cmd, m, res, s, dryRun)
 				if err == nil && !dryRun {
@@ -305,24 +337,50 @@ do not rename an aliased link.`,
 	cmd.MarkFlagsMutuallyExclusive("pin", "unpin")
 	cmd.Flags().StringVar(&alias, "as", "", "link name to use instead of the skill's name (one skill only)")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "show what would change")
-	cmd.MarkFlagRequired("agent")
+	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "apply without asking when choosing interactively")
 	return cmd
 }
 
 func newDisableCmd() *cobra.Command {
 	var sf scopeFlags
 	var agentIDs []string
-	var dryRun bool
+	var dryRun, yes bool
 	cmd := &cobra.Command{
-		Use:   "disable <skill>... [--agent <id,...>]",
+		Use:   "disable [<skill>...] [--agent <id,...>]",
 		Short: "Remove skill links (for all agents unless --agent is given)",
-		Args:  cobra.MinimumNArgs(1),
+		Long: `Remove skill links (for all agents unless --agent is given).
+
+Without skill arguments, on a terminal, choose among the skills deployed in the
+scope, then the plan is shown and confirmed (--yes skips the confirmation).
+--no-input or SKILLET_NO_INPUT=1 turns that off.`,
+		Args: cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			prompt := len(args) == 0 && canPrompt(cmd)
+			if len(args) == 0 && !prompt {
+				return errors.New("no skills given; name them, or run on a terminal without --no-input to choose interactively")
+			}
 			s, err := deploy.ResolveScope(sf.global, sf.dir, sf.exact)
 			if err != nil {
 				return err
 			}
 			return withManager(func(m *deploy.Manager) error {
+				if prompt {
+					ch := newChooser()
+					opts := deployedOptions(m.St.Skills, m.ServedIn(s))
+					if len(opts) == 0 {
+						fmt.Fprintf(cmd.OutOrStdout(), "No skills are deployed in %s.\n", display(deploy.ScopeLabel(s), agents.Scope{Global: true}))
+						return nil
+					}
+					if args, err = ch.Skills("Skills to disable", opts); err != nil {
+						return err
+					}
+					if len(args) == 0 {
+						return errors.New("no skills selected")
+					}
+					return confirmChange(cmd, m, ch, s, yes, func(dry bool) ([]deploy.Result, error) {
+						return m.Disable(deploy.ChangeOpts{Skills: args, Agents: agentIDs, Scope: s, DryRun: dry || dryRun})
+					}, dryRun)
+				}
 				res, err := m.Disable(deploy.ChangeOpts{Skills: args, Agents: agentIDs, Scope: s, DryRun: dryRun})
 				printResults(cmd, m, res, s, dryRun)
 				if err == nil && !dryRun {
@@ -334,6 +392,7 @@ func newDisableCmd() *cobra.Command {
 	}
 	sf.register(cmd)
 	cmd.Flags().StringSliceVarP(&agentIDs, "agent", "a", nil, "agents to disable for (default: all)")
+	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "apply without asking when choosing interactively")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "show what would change")
 	return cmd
 }

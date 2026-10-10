@@ -225,8 +225,8 @@ skillet init [--store <dir>]                       # 生成配置，创建 store
 skillet repo add <url | owner/repo> [--branch b]   # clone，扫描 SKILL.md
 skillet repo list | remove <repo> | show <repo> [--json]   # show：地址/分支/HEAD/上游落后数/pin 检出/各 skill 及部署位置
 skillet list [--repo <repo>]                       # 列出可用 skill
-skillet enable <skill…> --agent a,b [--dir <path> | --global] [--pin <rev>] [--as <alias>] [--mode …]
-skillet disable <skill…> [--agent a,b] [--dir <path> | --global]
+skillet enable [<skill…>] [--agent a,b] [--yes] [--dir <path> | --global] [--pin <rev>] [--as <alias>] [--mode …]
+skillet disable [<skill…>] [--agent a,b] [--yes] [--dir <path> | --global]
 skillet status [--dir <path> | --global | --all]   # 当前目录各 agent 生效了什么
 skillet save [--dir <path>]                        # 把项目当前的 skill 写成 skillet.toml
 skillet restore [--dir <path>] [--dry-run] [--prune]   # 按 skillet.toml 还原
@@ -238,6 +238,12 @@ skillet schedule install [--every 6h] | remove
 skillet hook claude
 ```
 
+- 交互模式：`enable` 缺 skill 参数或缺 `--agent`、`disable` 缺 skill 参数，且 stdin 与 stdout 都是终端时，用 huh 提问（可过滤的多选）：
+  - skill 列表为 store 里所有 skill（`name  repo — 描述`，描述截断到 60 字符），本 scope 已启用的预选并标出已服务的 agent；`disable` 只列本 scope 已部署的 skill，不预选。
+  - agent 列表为注册表里的 agent；若所选 skill 在本 scope 都已启用，预选已服务它们的 agent，否则预选检测到已安装的 agent（`Agent.Detect`）。
+  - 然后以 dry-run 打印计划，再问 “Apply?”；确认后真正执行（并同步 `skillet.toml`）。`--yes` 跳过确认，`--dry-run` 只打印计划。Ctrl-C / Esc 打印 `aborted`、退出码 130、不做任何改动。
+  - 全局 `--no-input`、环境变量 `SKILLET_NO_INPUT`（非空且非 0/false）或 `CI` 关闭所有提问；非终端同样不提问，行为同以前：缺 skill 报错（提示需要终端），缺 agent 报 `specify at least one agent with --agent`。
+  - `update` 的 y/N 在终端里也用同一个确认框；非终端仍读 stdin 一行（管道 `y` 可用）。
 - skill 引用：唯一时直接写 `pdf`；重名时写 `anthropics/skills/pdf` 或完整 id。
 - `--dir` 默认当前目录，并向上找 git 根作为项目目录（`--no-git-root` 关闭）。
 - 所有会改文件系统的命令支持 `--dry-run`，查询类命令（`list`、`repo list/show`、`status`、`check`、`doctor`、`agents`）支持 `--json`。

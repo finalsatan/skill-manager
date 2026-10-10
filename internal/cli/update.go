@@ -177,6 +177,10 @@ re-linked and links to deleted skills are removed.`,
 				}
 				out := cmd.OutOrStdout()
 				in := bufio.NewReader(cmd.InOrStdin())
+				var ch chooser
+				if !yes && canPrompt(cmd) {
+					ch = newChooser()
+				}
 				updated, failed := 0, 0
 				for _, c := range res {
 					if c.UpToDate() {
@@ -192,9 +196,20 @@ re-linked and links to deleted skills are removed.`,
 						return err
 					}
 					fmt.Fprintf(out, "\n%s\n\n%s\n\n", indent(log), indent(diff))
-					if !yes && !confirm(out, in, fmt.Sprintf("Apply update to %s?", c.Repo)) {
-						fmt.Fprintln(out, "  skipped")
-						continue
+					if !yes {
+						q := fmt.Sprintf("Apply update to %s?", c.Repo)
+						var ok bool
+						if ch != nil {
+							if ok, err = ch.Confirm(q); err != nil {
+								return err
+							}
+						} else {
+							ok = confirm(out, in, q)
+						}
+						if !ok {
+							fmt.Fprintln(out, "  skipped")
+							continue
+						}
 					}
 					r, err := m.Update(c)
 					if err != nil {

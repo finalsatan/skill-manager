@@ -158,3 +158,28 @@ func (m *Manager) DeployedScopes() ScopeSet {
 	}
 	return set
 }
+
+// ServedIn maps each skill deployed in the scope to the agents its links serve
+// there (sorted, without duplicates).
+func (m *Manager) ServedIn(s agents.Scope) map[string][]string {
+	set := map[string]map[string]bool{}
+	for _, d := range m.St.Deployments {
+		if !inScope(d, s) {
+			continue
+		}
+		if set[d.Skill] == nil {
+			set[d.Skill] = map[string]bool{}
+		}
+		for _, a := range d.Agents {
+			set[d.Skill][a] = true
+		}
+	}
+	out := make(map[string][]string, len(set))
+	for id, as := range set {
+		for a := range as {
+			out[id] = append(out[id], a)
+		}
+		sort.Strings(out[id])
+	}
+	return out
+}

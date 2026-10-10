@@ -81,7 +81,7 @@ export HOME=<scratch>/home SKILLET_CONFIG_DIR=<scratch>/home/cfg
 2. **`update` 等待 y/N 期间一直持有状态锁**，其他前台 skillet 命令会被阻塞（后台检查用 `TryLock`，会跳过）。
 3. 同名冲突只报告不处理（status 警告、doctor 报 `clash`）。
 4. 输出全部英文，用户界面没有中文化（用户没提要求）。
-5. 没有交互式选择或 TUI。用户看过方案，选择先做矩阵视图的 `status`，交互式选择（`charmbracelet/huh`）和矩阵 TUI（`bubbletea`）暂缓。
+5. 交互式选择已在 M4 用 `charmbracelet/huh` 实现（见 7.4）；矩阵 TUI（`bubbletea`）仍未做。
 6. 安全修复（已落地）：`skill.Hash` 与 `copyDir` 一致地跟随文件软链接；`checkFree` 拒绝采用被手改过的残留副本；`checkRemovable` 只允许删除指向 store 内的链接，哈希出错也视为错误；`ParseSource` 拒绝含空段、`.`、`..` 的 id（`AddRepo` 另外检查目录在 store 内）；`pending` 用 `OpenTry`，锁被占用时静默退出。
 
 ## 7. M3（提醒）：已实现，待提交
@@ -103,9 +103,15 @@ export HOME=<scratch>/home SKILLET_CONFIG_DIR=<scratch>/home/cfg
 
 `repo show <repo> [--json]`（`deploy/repoinfo.go`）、`status --all [--json]`（`Manager.DeployedScopes`、`cli/status.go` 的 `runStatusAll`）、`enable --as <alias>`（`Deployment.Alias`，规划见 `enable.go` 的 `planSkill`，`update.go` 的 resync/adoptOrphans 尊重别名，清单字段 `as`，`ChangeOpts.Unalias` 只给 restore 用）、`agents` 的 INSTALLED 列和 `--json`（`agents.Agent.Detect`）、`doctor --json`。行为见 `docs/design.md` 第 7、8 节。测试：`deploy/alias_test.go`、`deploy/repoinfo_test.go`、`agents/agents_test.go`。别名改名时新链接沿用旧链接的 mode（显式 `--mode` 优先）。
 
-### 下一步：M4 剩余
+## 7.4 M4：交互式选择已实现（未提交，分支 `feat/m4`）
 
-交互式选择。第 6 节第 2 条（update 等待 y/N 时持锁）对后台检查已不构成问题（TryLock 跳过），但会阻塞同时运行的前台命令，仍可改进。
+`enable`（缺 skill 或缺 `--agent`）与 `disable`（缺 skill）在 stdin、stdout 都是终端时用 huh 多选，随后 dry-run 预览 + “Apply?” 确认（`--yes` 跳过）；全局 `--no-input` / `SKILLET_NO_INPUT` / `CI` 关闭；`update` 的确认在终端里也走 huh。代码：`internal/cli/choose.go`（`chooser` 接口、huh 实现、`skillOptions`/`deployedOptions`/`agentOptions`/`defaultAgents` 纯函数、`confirmChange`）、`commands.go`、`update.go`、`root.go`（`errAborted` -> 退出码 130）、`deploy.Manager.ServedIn`。测试 `internal/cli/choose_test.go` 用假 chooser 覆盖。`--agent` 不再 `MarkFlagRequired`。行为见 `docs/design.md` 第 7 节。
+
+**M4 全部完成。** 未验证：真实终端里 huh 界面的手动试用（本环境只能用 `script` 确认它能启动；伪终端不回应终端查询，会拖几秒）、Ctrl-C 真实按键、Windows / macOS 实际运行。
+
+### 下一步
+
+在真实终端手动试一遍交互流程；Windows / macOS 实机验证（见第 6 节第 1 条）。第 6 节第 2 条（update 等待 y/N 时持锁）对后台检查已不构成问题（TryLock 跳过），但会阻塞同时运行的前台命令，仍可改进。
 
 ## 8. 工作方式备忘
 

@@ -28,6 +28,9 @@ skillet enable weird_name -a claude --as weird-name   # 名字不合规或重名
 skillet status --all                          # 所有有部署的 scope（全局 + 各项目）
 skillet disable pdf -a claude                 # 只对 claude 停用
 skillet disable pdf                           # 全部停用
+skillet enable                                # 终端里：交互选择 skill 和 agent，预览后确认（--yes 跳过确认）
+skillet disable                               # 终端里：从本目录已部署的 skill 里选
+# --no-input 或环境变量 SKILLET_NO_INPUT=1 / CI 关闭所有提问
 
 skillet check                                 # fetch 所有仓库，列出哪些 skill 在上游变了
 skillet update                                # 看提交记录和 diffstat，确认后 fast-forward
@@ -65,4 +68,4 @@ skill 重名时用 `owner/repo/name` 或完整 id（`skillet list --json` 里的
 - [x] M1：init、repo add/list/remove、list、enable/disable、status、agents，三平台链接
 - [x] M2：check / update（按 skill 子目录检测更新、diff 审阅、copy 重新同步）、doctor
 - [x] M3：被动提醒 + 后台检查、`schedule install/remove`、`check --notify/--quiet`、`pending`、`hook claude`
-- [ ] M4：固定版本（`enable --pin`，git worktree）已完成；团队清单 `skillet.toml`（`save` / `restore`，之后 `enable`/`disable` 自动同步）已完成；交互式选择待做
+- [x] M4：固定版本（`enable --pin`，git worktree）已完成；团队清单 `skillet.toml`（`save` / `restore`，之后 `enable`/`disable` 自动同步）已完成；交互式选择（`enable`/`disable` 缺参数时用 huh 多选，`--no-input` 关闭）已完成；`repo show`、`status --all`、`enable --as`、agent 检测、`doctor --json` 已完成
