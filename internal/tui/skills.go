@@ -205,6 +205,7 @@ type skillKeys struct {
 	Up, Down, PgUp, PgDown, Top, Bottom, Filter, Search key.Binding
 	Confirm, Clear                                      key.Binding
 	Left, Right, Toggle, ToggleRow, Review              key.Binding
+	Pin, Alias                                          key.Binding
 }
 
 func newSkillKeys() skillKeys {
@@ -221,6 +222,8 @@ func newSkillKeys() skillKeys {
 		Right:     key.NewBinding(key.WithKeys("right", "l")),
 		Toggle:    key.NewBinding(key.WithKeys("space"), key.WithHelp("space", i18n.T("help.toggle"))),
 		ToggleRow: key.NewBinding(key.WithKeys("a"), key.WithHelp("a", i18n.T("help.row"))),
+		Pin:       key.NewBinding(key.WithKeys("p"), key.WithHelp("p", i18n.T("help.pin"))),
+		Alias:     key.NewBinding(key.WithKeys("R"), key.WithHelp("R", i18n.T("help.alias"))),
 		Review:    key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", i18n.T("help.review"))),
 		Confirm:   key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", i18n.T("help.confirm"))),
 		Clear:     key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", i18n.T("help.clear"))),
@@ -233,7 +236,7 @@ func (m skillsModel) helpGroups() [][]key.Binding {
 	if m.editing {
 		return [][]key.Binding{{k.Confirm, k.Clear}}
 	}
-	return [][]key.Binding{{k.Up, k.PgUp, k.Top, k.Left}, {k.Toggle, k.ToggleRow, k.Review, k.Clear}, {k.Filter, k.Search}}
+	return [][]key.Binding{{k.Up, k.PgUp, k.Top, k.Left}, {k.Toggle, k.ToggleRow, k.Review, k.Clear}, {k.Pin, k.Alias, k.Filter, k.Search}}
 }
 
 // shortHelp is the compact footer: the few keys that fit on one line.

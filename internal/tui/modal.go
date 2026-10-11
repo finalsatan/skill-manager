@@ -202,6 +202,16 @@ func stepLines(c change, st *step, s agents.Scope, order []string, sty styles) [
 	if len(c.Disable) > 0 {
 		out = append(out, "  "+sty.Bold.Render(i18n.T("modal.disable", strings.Join(c.Disable, ", "))))
 	}
+	switch {
+	case c.Pin != "":
+		out = append(out, "  "+sty.Bold.Render(i18n.T("modal.pin", c.Pin)))
+	case c.Unpin:
+		out = append(out, "  "+sty.Bold.Render(i18n.T("modal.unpin")))
+	case c.Alias != "":
+		out = append(out, "  "+sty.Bold.Render(i18n.T("modal.alias", c.Alias)))
+	case c.Unalias:
+		out = append(out, "  "+sty.Bold.Render(i18n.T("modal.unalias")))
+	}
 	if len(st.Actions) == 0 {
 		out = append(out, "    "+sty.Dim.Render(i18n.T("modal.nochange")))
 	}

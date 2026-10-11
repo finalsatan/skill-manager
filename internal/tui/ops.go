@@ -51,7 +51,7 @@ func toStep(m *deploy.Manager, res []deploy.Result, agentIDs []string) *step {
 
 // opts are the options of the Set call for one skill.
 func (c change) opts(s agents.Scope, dry bool) deploy.ChangeOpts {
-	return deploy.ChangeOpts{Skills: []string{c.ID}, Scope: s, DryRun: dry}
+	return deploy.ChangeOpts{Skills: []string{c.ID}, Scope: s, DryRun: dry, Pin: c.Pin, Unpin: c.Unpin, Alias: c.Alias, Unalias: c.Unalias}
 }
 
 // planChanges dry-runs each skill's change with one Set call, the same call
@@ -77,6 +77,8 @@ func planChanges(m *deploy.Manager, s agents.Scope, cs []change) []skillPlan {
 type applied struct {
 	Name            string
 	Enable, Disable []string
+	Pin, Alias      string
+	Unpin, Unalias  bool
 }
 
 // applyChanges makes the changes, one Set call per skill, and stops at the
@@ -87,7 +89,7 @@ func applyChanges(m *deploy.Manager, s agents.Scope, cs []change) ([]applied, er
 		if _, err := m.Set(c.opts(s, false), c.Enable, c.Disable); err != nil {
 			return done, fmt.Errorf("%s: %w", c.Name, err)
 		}
-		done = append(done, applied{c.Name, c.Enable, c.Disable})
+		done = append(done, applied{Name: c.Name, Enable: c.Enable, Disable: c.Disable, Pin: c.Pin, Alias: c.Alias, Unpin: c.Unpin, Unalias: c.Unalias})
 	}
 	return done, nil
 }
@@ -98,6 +100,7 @@ type previewMsg struct {
 	plans    []skillPlan
 	manifest bool // skillet.toml exists in the project and will be updated
 	err      error
+	changes  []change // set when the changes were worked out by the command
 }
 
 // previewCmd opens the store, dry-runs the changes and closes it again.
@@ -140,6 +143,29 @@ func applyCmd(kind scopeKind, s agents.Scope, cs []change) tea.Cmd {
 				}
 			}
 			return err
+		})
+		return msg
+	}
+}
+
+// optionChangeCmd previews a pin or alias change: it works out the agents the
+// skill is served to in the scope, as `enable --pin/--as` would be given them,
+// and dry-runs re-enabling those with the option set.
+func optionChangeCmd(kind scopeKind, s agents.Scope, c change) tea.Cmd {
+	return func() tea.Msg {
+		msg := previewMsg{kind: kind}
+		msg.err = withManager(func(m *deploy.Manager) error {
+			c.Enable = m.ServedIn(s)[c.ID]
+			if len(c.Enable) == 0 {
+				return fmt.Errorf("%s is not enabled in this scope", c.Name)
+			}
+			msg.changes = []change{c}
+			msg.plans = planChanges(m, s, msg.changes)
+			if !s.Global {
+				_, err := os.Stat(deploy.ManifestPath(s))
+				msg.manifest = err == nil
+			}
+			return nil
 		})
 		return msg
 	}

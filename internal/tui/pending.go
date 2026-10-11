@@ -46,6 +46,13 @@ type change struct {
 	Name    string
 	Enable  []string
 	Disable []string
+
+	// Pin, Unpin, Alias and Unalias come from the pin and alias dialogs, which
+	// re-enable the agents already served with one of these options.
+	Pin     string
+	Unpin   bool
+	Alias   string
+	Unalias bool
 }
 
 // changes converts the pending set into per-skill changes sorted by name then

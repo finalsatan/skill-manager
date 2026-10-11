@@ -154,6 +154,9 @@ func (m Model) update(msg tea.Msg) (Model, tea.Cmd) {
 	case previewMsg:
 		if m.modal.open && msg.kind == m.modal.kind {
 			m.modal.loading, m.modal.plans, m.modal.manifest, m.modal.openErr = false, msg.plans, msg.manifest, msg.err
+			if msg.changes != nil {
+				m.modal.changes = msg.changes
+			}
 		}
 	case applyMsg:
 		m.applying = false
@@ -325,6 +328,9 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 		return m.switchTab((m.tab + 1) % numTabs)
 	case "shift+tab":
 		return m.switchTab((m.tab + numTabs - 1) % numTabs)
+	}
+	if m.tab == tabSkills && (msg.String() == "p" || msg.String() == "R") {
+		return m.openOptionDialog(msg.String() == "p")
 	}
 	if m.tab == tabSkills && msg.String() == "enter" {
 		return m.startPreview()
@@ -679,11 +685,22 @@ func fit(s string, w, h int) string {
 func applySummary(done []applied, err error) (string, bool) {
 	var parts []string
 	for _, d := range done {
-		if len(d.Enable) > 0 {
-			parts = append(parts, i18n.T("apply.enabled", d.Name))
-		}
-		if len(d.Disable) > 0 {
-			parts = append(parts, i18n.T("apply.disabled", d.Name))
+		switch {
+		case d.Pin != "":
+			parts = append(parts, i18n.T("apply.pinned", d.Name, shortSHA(d.Pin)))
+		case d.Unpin:
+			parts = append(parts, i18n.T("apply.unpinned", d.Name))
+		case d.Alias != "":
+			parts = append(parts, i18n.T("apply.aliased", d.Name, d.Alias))
+		case d.Unalias:
+			parts = append(parts, i18n.T("apply.unaliased", d.Name))
+		default:
+			if len(d.Enable) > 0 {
+				parts = append(parts, i18n.T("apply.enabled", d.Name))
+			}
+			if len(d.Disable) > 0 {
+				parts = append(parts, i18n.T("apply.disabled", d.Name))
+			}
 		}
 	}
 	if err != nil {
@@ -722,4 +739,71 @@ func updateSummary(done []updatedRepo, err error) (string, bool) {
 		parts = append(parts, i18n.T("updates.restart"))
 	}
 	return strings.Join(parts, " · "), false
+}
+
+// openOptionDialog asks for the revision to pin the selected skill to (pin) or
+// for its link name (otherwise); an empty answer undoes the option.
+func (m Model) openOptionDialog(pin bool) (Model, tea.Cmd) {
+	m.status, m.statusErr = "", false
+	it := m.skills.selected()
+	switch {
+	case it == nil:
+		return m, nil
+	case m.scope == scopeAll:
+		m.status = i18n.T("ro.all")
+		return m, nil
+	case !it.r.managed():
+		m.status = i18n.T("ro.unmanaged")
+		return m, nil
+	case !it.r.InStore:
+		m.status = i18n.T("ro.gone")
+		return m, nil
+	case !it.r.enabled():
+		m.status = i18n.T("option.notenabled")
+		return m, nil
+	case len(m.skills.pend[m.scope]) > 0:
+		m.status = i18n.T("option.pending")
+		return m, nil
+	}
+	r := it.r
+	s := m.opts.Project
+	if m.scope == scopeGlobal {
+		s = agents.Scope{Global: true}
+	}
+	kind := m.scope
+	ti := textinput.New()
+	ti.Prompt = ""
+	ti.SetWidth(40)
+	d := modalState{allowEmpty: true, input: ti, hasInput: true, okKey: "option.ok"}
+	if pin {
+		d.title, d.prompt = i18n.T("option.pin.title", r.Name), i18n.T("option.pin.prompt")
+		hint := i18n.T("option.pin.hint")
+		if r.Pin != "" {
+			hint += "  " + i18n.T("status.pinned", shortSHA(r.Pin))
+		}
+		d.body = []string{m.st.Dim.Render(hint)}
+		d.onOK = func(m Model, rev string) (Model, tea.Cmd) {
+			c := change{ID: r.ID, Name: r.Name, Pin: rev, Unpin: rev == ""}
+			return m.previewOption(kind, s, c)
+		}
+	} else {
+		d.title, d.prompt = i18n.T("option.alias.title", r.Name), i18n.T("option.alias.prompt")
+		hint := i18n.T("option.alias.hint")
+		if r.Alias != "" {
+			hint += "  " + r.Alias + " ← " + r.Name
+		}
+		d.body = []string{m.st.Dim.Render(hint)}
+		d.onOK = func(m Model, alias string) (Model, tea.Cmd) {
+			c := change{ID: r.ID, Name: r.Name, Alias: alias, Unalias: alias == ""}
+			return m.previewOption(kind, s, c)
+		}
+	}
+	focus := d.input.Focus()
+	return m.openDialog(d), focus
+}
+
+// previewOption opens the preview dialog for a pin or alias change.
+func (m Model) previewOption(kind scopeKind, s agents.Scope, c change) (Model, tea.Cmd) {
+	m.modal = modalState{open: true, kind: kind, scope: s, loading: true}
+	return m, optionChangeCmd(kind, s, c)
 }
