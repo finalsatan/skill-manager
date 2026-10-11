@@ -14,6 +14,26 @@ go build -o bin/skillet ./cmd/skillet
 
 ## 用法
 
+### 终端界面（TUI）
+
+```bash
+skillet            # 在终端里不带子命令运行，直接进入界面
+skillet tui        # 同上；非终端、--no-input、SKILLET_NO_INPUT、CI 时 `skillet` 只打印帮助
+```
+
+四个标签，按 `1`–`4`（或 `tab`）切换：
+
+- **技能**：skill × agent 矩阵。`↑/↓` 移动，`←/→` 选 agent 列，`space` 切换当前格（`+` 待启用、`−` 待停用），`a` 整行切换，`enter` 预览并应用，`esc` 清除待应用项；`f` 只看已启用，`/` 搜索，`p` 固定版本，`R` 改链接名；`s` 在 项目 → 全局 → 全部 间切换范围（「全部」只读）。
+- **更新**：有上游变更的仓库，`space` 勾选，`r` 联网检查，`D` 看完整 diff，`enter` 更新。
+- **仓库**：`n` 添加，`x` 移除（先预览），`enter` 看该仓库的技能，`u` 跳到更新。
+- **体检**：问题按严重程度分组，`F` 一键修复可修复的项，`enter` 跳到相关技能。
+
+`?` 展开全部按键，`q` 退出。所有改动都先 dry-run 预览，确认后才执行；TUI 不会在你思考时占着状态锁。
+
+界面语言：环境变量 `SKILLET_LANG`（`zh` / `en`）优先，其次 `config.toml` 的 `lang = "zh"`，再其次 `LC_ALL` / `LC_MESSAGES` / `LANG`（以 `zh` 开头即中文），默认英文。命令行输出始终是英文。
+
+### 命令行
+
 ```bash
 skillet init --store ~/skills-store          # 选择存放仓库的目录
 skillet repo add anthropics/skills            # 也可以是 https/ssh URL 或本地路径（--dry-run 只显示会 clone 到哪）
@@ -71,3 +91,4 @@ skill 重名时用 `owner/repo/name` 或完整 id（`skillet list --json` 里的
 - [x] M2：check / update（按 skill 子目录检测更新、diff 审阅、copy 重新同步）、doctor
 - [x] M3：被动提醒 + 后台检查、`schedule install/remove`、`check --notify/--quiet`、`pending`、`hook claude`
 - [x] M4：固定版本（`enable --pin`，git worktree）已完成；团队清单 `skillet.toml`（`save` / `restore`，之后 `enable`/`disable` 自动同步）已完成；交互式选择（`enable`/`disable` 缺参数时用 huh 多选，`--no-input` 关闭）已完成；`repo show`、`status --all`、`enable --as`、agent 检测、`doctor --json` 已完成
+- [x] TUI（`skillet` / `skillet tui`，bubbletea v2）：技能矩阵（切换、预览、应用、固定版本、别名）、更新、仓库、体检四个标签，中英文界面。未在真实终端、浅色背景、Windows / macOS 上验证。

@@ -282,6 +282,8 @@ internal/
   notify/      # 各平台桌面通知
   schedule/    # 各平台定时任务注册
   cli/         # cobra 命令定义、输出格式
+  tui/         # 终端界面（bubbletea v2），见第 12 节
+  i18n/        # TUI 的中英文文案表与语言检测
 ```
 
 依赖：`spf13/cobra`、`BurntSushi/toml`、`gopkg.in/yaml.v3`、`gofrs/flock`、`golang.org/x/sys`。
@@ -299,3 +301,41 @@ internal/
 2. **M2 更新**：check、update（diff 审阅、ff-only、copy 重同步、删除检测）、doctor。
 3. **M3 提醒**（已完成）：被动检查、schedule、桌面通知、Claude hook。
 4. **M4 增强**：pin（git worktree，已完成）、自定义 agent、项目内 `skillet.toml` 供团队还原（`save`/`restore`，已完成，见 6.5）；交互式选择待做。
+
+## 12. 终端界面（TUI）
+
+入口：终端里不带子命令的 `skillet`，或 `skillet tui`（`internal/cli/tui.go`）。未初始化时前者打印帮助和 `skillet init` 提示，后者返回同样的错误。技术栈为 Charm v2（`charm.land/bubbletea/v2`、`bubbles/v2`、`lipgloss/v2`、`huh/v2`）。
+
+### 12.1 结构
+
+- 根模型 `tui.Model`（`model.go`）：标签栏（带更新数、体检问题数）、范围指示（仅「技能」标签）、状态行、页脚按键帮助（`bubbles/help` + `key`）、全局按键（`1`–`4`、`tab`、`s`、`r`、`?`、`q`）、对话框和忙碌状态。
+- 每个标签一个子模型：`skills.go`（矩阵 + 详情栏 + 搜索）、`updates.go`、`repos.go`、`doctor.go`。子模型只处理光标/勾选/滚动；启动操作、开对话框由根模型做。
+- 纯函数与数据：`matrix.go`（`buildRows` / `filterRows`，把技能、`Status` 条目、agent 变成矩阵行和格子状态）、`pending.go`（待应用集合 → 每个 skill 的 `{enable, disable}`）、`ops.go`（预览 / 应用）、`data.go`（加载）。
+- 对话框 `modal.go`：同一个组件用于变更预览、更新确认、添加/移除仓库、体检修复、固定版本和别名输入。
+
+### 12.2 锁规则
+
+TUI 长时间运行，**绝不在用户交互期间持有 `Manager`**。每次加载或操作都在一个 `tea.Cmd` 里：`deploy.OpenTry` → 干活 → `Close` → 返回结果消息（`withManager`）。锁被其他 skillet 进程占用时 `state.ErrLocked` 显示为友好提示。进程内并发的命令（启动时同时加载计数和矩阵）用包级互斥量排队，否则会互相抢锁、误报「正忙」。预览（dry-run）和应用是两次独立的打开/关闭；`Enable`/`Disable`/`Set` 应用时会重新规划，所以预览到应用之间状态变了也安全。长操作（fetch、clone、update、apply）在页脚显示 spinner，期间忽略按键（`ctrl+c` 除外）。
+
+### 12.3 原子的逐 skill 变更：`Manager.Set`
+
+同一个 skill 既要启用某些 agent 又要停用另一些时，分别调用 `Disable` 再 `Enable` 会规划两次，预览与实际不一致，也不是原子的。`Manager.Set(o, enable, disable)`（`deploy/enable.go`）按「当前服务的 agent − disable + enable」一次规划，只用 `change()`；没有要启用的就等同 `Disable`（可以处理上游已删除的 skill），否则等同 `Enable`（支持 `Pin`/`Alias`）。TUI 的预览和应用都是每个 skill 一次 `Set`，所以预览 == 应用。固定版本、别名也是对该 skill 当前服务的 agent 做一次带选项的 `Set`。
+
+### 12.4 体检：`Issue.Fixable`
+
+`deploy.Issue.Fixable()` 说明 `doctor --fix` 能否修复（orphan、orphan-pin、pin-missing、project-gone、missing、broken、wrong-target、outdated 可以；repo-missing、modified、clash 不行）。CLI 的计数和 TUI 的列表/确认框都用它，不各写一份。`Issue.Detail` 是英文句子，TUI 原样显示，类别名、分组和标签是本地化的。
+
+### 12.5 i18n
+
+`internal/i18n`：`en` / `zh` 两张表，稳定的字符串 key，`T(key, args...)` 按 fmt 格式化；测试保证两张表 key 完全一致、占位符一致。语言选择优先级：环境变量 `SKILLET_LANG` → `config.toml` 的 `lang` → `LC_ALL` → `LC_MESSAGES` → `LANG`（`zh` 开头为中文）→ 英文。只有 TUI 使用，命令行输出保持英文。宽度一律用 lipgloss/ansi 的单元格宽度（CJK 占两格），不用 `len`。
+
+### 12.6 只读与限制
+
+- 「全部」范围按已部署的范围分节显示，**只读**：一次变更只对应一个范围，混在一起无法预览/应用。
+- 非托管条目（`■`）和上游已不存在的 skill 不能在矩阵里切换（后者只能 `skillet disable`）。
+- 有待应用的矩阵变更时不能固定版本/改别名，避免两种变更混在同一个预览里。
+- 更新和移除仓库后不同步 `skillet.toml`（与 CLI 一致）；矩阵的应用会同步。
+
+### 12.7 测试
+
+不使用伪终端。模型测试直接调用 `Update`/`View`（`ansi.Strip` 后断言文本，中英文各一遍）；`ops`/仓库/更新/体检的命令用临时真实 store（本地 git 仓库作上游）验证磁盘结果和「预览不改动」；`program_test.go` 用管道输入、缓冲区输出跑一个真正的 `tea.Program` 走完 切换 → 预览 → 应用 → 退出。

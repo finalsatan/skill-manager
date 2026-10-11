@@ -1,6 +1,6 @@
 # skillet 交接文档
 
-更新于 2026-10-10，分支 `feat/m4`（M1–M4 及收尾改动全部已提交，尚未合并到 `master`、未推送）。新会话先读本文，再按需读 `docs/design.md`（设计）和 `docs/research.md`（调研）。
+更新于 2026-10-11，分支 `feat/tui`（从 `feat/m4` 分出；M1–M4 和 TUI 全部已提交，尚未合并到 `master`、未推送）。新会话先读本文，再按需读 `docs/design.md`（设计）和 `docs/research.md`（调研）。
 
 ## 1. 项目是什么
 
@@ -22,7 +22,7 @@
 ## 3. 环境
 
 - Go 1.27.2 装在 `~/go-sdk/go`（不在 PATH）。每条命令前加 `export PATH=$HOME/go-sdk/go/bin:$PATH`。
-- 仓库：`/home/ubuntu/github-project-research/skill-manager`，开发在分支 `feat/m4`（从 `main` 分出），无远端，未推送。
+- 仓库：`/home/ubuntu/github-project-research/skill-manager`，开发在分支 `feat/tui`（TUI；之前的 M1–M4 在 `feat/m4`，从 `main` 分出），无远端，未推送。
 - 这台机器 git 没配置身份。上次提交用的是 `git -c user.name=zhangyhhust -c user.email=zhangyhhust@gmail.com commit …`，没有写进 config。
 
 常用命令：
@@ -46,6 +46,8 @@ export HOME=<scratch>/home SKILLET_CONFIG_DIR=<scratch>/home/cfg
 | 包 | 内容 |
 |---|---|
 | `cmd/skillet` | 入口 |
+| `internal/tui` | 终端界面（bubbletea v2）：根模型 + 技能/更新/仓库/体检四个标签模型，见第 7.6 节和 `docs/design.md` 第 12 节 |
+| `internal/i18n` | TUI 的中英文文案表和语言检测（`SKILLET_LANG` → config `lang` → `LC_ALL`/`LC_MESSAGES`/`LANG`） |
 | `internal/cli` | cobra 命令：`commands.go`（init/repo/list/enable/disable/status/agents）、`update.go`（check/update/doctor）、`status.go`（矩阵视图） |
 | `internal/deploy` | 核心逻辑。`Manager` 持有 config、agent 注册表、加锁的状态文件。`enable.go` 规划与执行链接，`update.go` 检查与更新，`doctor.go` 健康检查与同名冲突，`status.go` 扫描各 agent 实际可见的 skill |
 | `internal/agents` | 内置 agent 表、`Plan`（选最少的链接目录）、`Reads`（判断谁会看到） |
@@ -81,7 +83,7 @@ export HOME=<scratch>/home SKILLET_CONFIG_DIR=<scratch>/home/cfg
 2. （已解决）`update` 与交互式 `enable`/`disable` 等待用户回答时不再持有状态锁：先在锁内 fetch/规划并读出 log/diff，释放后提问，确认后重新 `deploy.Open` 再应用（`Manager.Update` 在 head/upstream 变了时拒绝，应用时 enable/disable 会重新规划）。选项来自 `state.Peek` 快照（`cli/choose.go` 的 `takeSnapshot`）。测试 `cli/dryrun_test.go` 的 `lockFree` 在假 chooser 里断言锁空闲。
 3. 同名冲突只报告不处理（status 警告、doctor 报 `clash`）。
 4. 输出全部英文，用户界面没有中文化（用户没提要求）。
-5. 交互式选择已在 M4 用 `charmbracelet/huh` 实现（见 7.4）；矩阵 TUI（`bubbletea`）仍未做。
+5. 交互式选择已在 M4 用 huh 实现（见 7.4）；矩阵 TUI 已在 `feat/tui` 用 bubbletea v2 实现（见 7.6）。依赖已迁到 Charm v2（模块路径 `charm.land/huh/v2`、`charm.land/bubbletea/v2`、`charm.land/bubbles/v2`、`charm.land/lipgloss/v2`，API 与 v1 不同：`View()` 返回 `tea.View`，按键是 `tea.KeyPressMsg`，没有 `AdaptiveColor`，用 `lipgloss.LightDark`）。
 6. 安全修复（已落地）：`skill.Hash` 与 `copyDir` 一致地跟随文件软链接；`checkFree` 拒绝采用被手改过的残留副本；`checkRemovable` 只允许删除指向 store 内的链接，哈希出错也视为错误；`ParseSource` 拒绝含空段、`.`、`..` 的 id（`AddRepo` 另外检查目录在 store 内）；`pending` 用 `OpenTry`，锁被占用时静默退出。
 
 ## 7. M3（提醒）：已实现
@@ -115,10 +117,22 @@ export HOME=<scratch>/home SKILLET_CONFIG_DIR=<scratch>/home/cfg
 
 ### 下一步
 
+0. TUI：在真实终端手动走一遍四个标签（尤其 alt screen 退出后终端恢复、浅色背景、窄窗口、CJK 对齐），再在 macOS / Windows 上试；然后合并 `feat/tui`。
+
 1. 推到 GitHub 跑 CI（`.github/workflows/ci.yml`），在 macOS / Windows 上验证（见第 6 节第 1 条：junction、只读 pack 文件删除、worktree + junction）。
 2. 在真实终端手动试一遍 huh 交互（enable/disable/update 确认、Ctrl-C 退出码 130）。本环境用 `script` 会因伪终端不回应查询而卡住，不要在那里跑。
-3. 可选：矩阵 TUI（`bubbletea`）。
+3. （已完成）矩阵 TUI，见 7.6。
 4. 已知小缺口：`update`/`repo remove --force` 之后不同步 `skillet.toml`；清单里固定了已被上游删除的 skill 时 restore 报 not found；pi 的 `.pi/skills` 路径未核实。
+
+## 7.6 TUI（`feat/tui`）：已实现
+
+`skillet`（终端里不带子命令）/ `skillet tui`。四个标签：技能（矩阵、`space` 切换、`enter` 预览 + 应用、`p` 固定版本、`R` 别名）、更新、仓库、体检；中英文。设计与结构见 `docs/design.md` 第 12 节，用法见 README。要点：
+
+- 锁规则：每个加载/操作在一个 `tea.Cmd` 里 `OpenTry` → 干活 → `Close`；进程内命令用 `storeMu` 排队（并发 `OpenTry` 会互相抢锁、误报「正忙」，这个 bug 是端到端程序测试发现的）。
+- `deploy.Manager.Set`（逐 skill 原子的启用+停用，预览 == 应用）、`deploy.Issue.Fixable`、`deploy.HealthRank` 是为 TUI 加到 deploy 层的。
+- 测试不用伪终端：模型测试直接调 `Update`/`View`，命令用真实临时 store，`program_test.go` 用管道输入跑真正的 `tea.Program`。
+
+**未验证**：真实终端里运行（按键、alt screen、spinner、viewport、背景色检测）；浅色背景外观；Windows / macOS；TUI 里对 copy / junction 链接模式加 pin / alias；Doctor 的 `Issue.Detail` 只有英文（类别名和标签已本地化）；以及一个已知副作用：`Manager.RepoInfo` / `Pending` 会在内存里重算 `Skill.Pending`（不保存，TUI 每次操作都重新打开状态所以无害，但只读调用有隐藏副作用）。
 
 ## 8. 工作方式备忘
 
