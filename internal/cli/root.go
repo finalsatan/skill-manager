@@ -24,6 +24,13 @@ func NewRoot() *cobra.Command {
 		Version:       Version,
 		SilenceUsage:  true,
 		SilenceErrors: true,
+		// Bare `skillet` opens the TUI on a terminal and prints help otherwise.
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if !canPrompt(cmd) {
+				return cmd.Help()
+			}
+			return runTUI()
+		},
 	}
 	root.PersistentFlags().Bool("no-input", false, "never prompt; fail instead (also SKILLET_NO_INPUT=1 or CI)")
 	root.AddCommand(
@@ -42,6 +49,7 @@ func NewRoot() *cobra.Command {
 		newPendingCmd(),
 		newScheduleCmd(),
 		newHookCmd(),
+		newTUICmd(),
 	)
 	return root
 }

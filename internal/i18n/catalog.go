@@ -13,11 +13,17 @@ var en = map[string]string{
 	"scope.all":     "all",
 	"scope.label":   "Scope: %s",
 
-	"soon":       "Coming soon.",
-	"loading":    "Loading…",
-	"locked":     "The store is busy (another skillet process holds the lock); try again in a moment.",
-	"err.load":   "Could not load: %v",
-	"no.project": "Not inside a project directory.",
+	"loading":      "Loading…",
+	"locked":       "The store is busy (another skillet process holds the lock); try again in a moment.",
+	"err.load":     "Could not load: %v",
+	"help.tabs":    "tabs",
+	"help.scope":   "scope",
+	"help.refresh": "refresh",
+	"help.help":    "help",
+	"help.quit":    "quit",
+	"repos.soon":   "Repository management is coming soon.",
+	"updates.soon": "Update review is coming soon.",
+	"doctor.soon":  "Health checks and fixes are coming soon.",
 }
 
 var zh = map[string]string{
@@ -31,9 +37,15 @@ var zh = map[string]string{
 	"scope.all":     "全部",
 	"scope.label":   "范围：%s",
 
-	"soon":       "敬请期待。",
-	"loading":    "加载中…",
-	"locked":     "存储正忙（另一个 skillet 进程持有锁），请稍后再试。",
-	"err.load":   "加载失败：%v",
-	"no.project": "当前不在项目目录中。",
+	"loading":      "加载中…",
+	"locked":       "存储正忙（另一个 skillet 进程持有锁），请稍后再试。",
+	"err.load":     "加载失败：%v",
+	"help.tabs":    "切换标签",
+	"help.scope":   "切换范围",
+	"help.refresh": "刷新",
+	"help.help":    "帮助",
+	"help.quit":    "退出",
+	"repos.soon":   "仓库管理即将推出。",
+	"updates.soon": "更新审阅即将推出。",
+	"doctor.soon":  "体检与修复即将推出。",
 }

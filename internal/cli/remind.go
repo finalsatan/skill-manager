@@ -21,7 +21,7 @@ const (
 // quietCommands never print the passive reminder or start a background check.
 var quietCommands = map[string]bool{
 	"check": true, "update": true, "pending": true, "schedule": true, "hook": true,
-	"init": true, "help": true, "completion": true, "__complete": true,
+	"init": true, "tui": true, "help": true, "completion": true, "__complete": true,
 }
 
 // checkInterval reads check_interval, falling back to six hours.
