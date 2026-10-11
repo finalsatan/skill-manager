@@ -6,12 +6,14 @@
 package tui
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"strings"
 
 	"charm.land/bubbles/v2/help"
 	"charm.land/bubbles/v2/key"
+	"charm.land/bubbles/v2/spinner"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
@@ -19,6 +21,7 @@ import (
 	"skillet/internal/agents"
 	"skillet/internal/config"
 	"skillet/internal/i18n"
+	"skillet/internal/state"
 )
 
 type tab int
@@ -82,14 +85,24 @@ type Model struct {
 
 	skills skillsModel
 
+	modal    modalState
+	applying bool // changes are being applied; input is ignored meanwhile
+	spin     spinner.Model
+
 	help help.Model
 }
 
 func New(opts Options) Model {
-	m := Model{opts: opts, isDark: true, help: help.New(), skills: newSkillsModel()}
+	m := Model{opts: opts, isDark: true, help: help.New(), skills: newSkillsModel(), spin: spinner.New(spinner.WithSpinner(spinner.Dot))}
+	m.restyle()
+	return m
+}
+
+// restyle rebuilds the styles for the current background.
+func (m *Model) restyle() {
 	m.st = newStyles(m.isDark)
 	m.help.Styles = m.st.Help
-	return m
+	m.spin.Style = lipgloss.NewStyle().Foreground(m.st.accent)
 }
 
 func (m Model) Init() tea.Cmd {
@@ -114,8 +127,7 @@ func (m Model) update(msg tea.Msg) (Model, tea.Cmd) {
 		m.help.SetWidth(msg.Width)
 	case tea.BackgroundColorMsg:
 		m.isDark = msg.IsDark()
-		m.st = newStyles(m.isDark)
-		m.help.Styles = m.st.Help
+		m.restyle()
 	case countsMsg:
 		if msg.err != nil {
 			m.setError(msg.err)
@@ -130,6 +142,21 @@ func (m Model) update(msg tea.Msg) (Model, tea.Cmd) {
 			m.setError(msg.err)
 		default:
 			m.skills.setData(msg.data, msg.kind)
+		}
+	case previewMsg:
+		if m.modal.open && msg.kind == m.modal.kind {
+			m.modal.loading, m.modal.plans, m.modal.manifest, m.modal.openErr = false, msg.plans, msg.manifest, msg.err
+		}
+	case applyMsg:
+		m.applying = false
+		delete(m.skills.pend, msg.kind)
+		m.status, m.statusErr = applySummary(msg.done, msg.err)
+		return m, tea.Batch(loadCounts(), m.loadSkills())
+	case spinner.TickMsg:
+		if m.applying {
+			var cmd tea.Cmd
+			m.spin, cmd = m.spin.Update(msg)
+			return m, cmd
 		}
 	case tea.KeyPressMsg:
 		return m.handleKey(msg)
@@ -149,6 +176,15 @@ func (m *Model) setError(err error) {
 }
 
 func (m Model) handleKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
+	if m.modal.open {
+		return m.modalKey(msg)
+	}
+	if m.applying {
+		if msg.String() == "ctrl+c" {
+			return m, tea.Quit
+		}
+		return m, nil
+	}
 	k := newKeyMap(nil, nil)
 	if key.Matches(msg, k.Quit) && (msg.String() == "ctrl+c" || !m.capturing()) {
 		return m, tea.Quit
@@ -181,6 +217,9 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 	case "shift+tab":
 		m.tab = (m.tab + numTabs - 1) % numTabs
 		return m, nil
+	}
+	if m.tab == tabSkills && msg.String() == "enter" {
+		return m.startPreview()
 	}
 	if m.tab == tabSkills {
 		m.status, m.statusErr = "", false
@@ -226,7 +265,11 @@ func (m Model) render() string {
 		return ""
 	}
 	_, bodyH := m.bodySize()
-	out := m.header() + "\n" + fit(m.body(), m.width, bodyH) + "\n" + m.footer()
+	body := fit(m.body(), m.width, bodyH)
+	if m.modal.open {
+		body = m.overlayModal(body, m.width, bodyH)
+	}
+	out := m.header() + "\n" + body + "\n" + m.footer()
 	// Never exceed the window, however small it is.
 	return fit(out, m.width, m.height)
 }
@@ -286,7 +329,9 @@ func (m Model) body() string {
 // footer is the status line followed by the key help.
 func (m Model) footer() string {
 	status := ""
-	if sum := m.skills.summary(); m.status == "" && m.tab == tabSkills && sum != "" {
+	if m.applying {
+		status = m.spin.View() + " " + m.st.Accent.Render(i18n.T("apply.applying"))
+	} else if sum := m.skills.summary(); m.status == "" && m.tab == tabSkills && sum != "" {
 		status = m.st.Pending.Render(sum)
 	} else if m.status != "" {
 		if m.statusErr {
@@ -294,6 +339,9 @@ func (m Model) footer() string {
 		} else {
 			status = m.st.Accent.Render(m.status)
 		}
+	}
+	if m.modal.open {
+		return ansi.Truncate(status, m.width, "…") + "\n" + m.st.Dim.Render(ansi.Truncate(i18n.T("modal.hint"), m.width, "…"))
 	}
 	return ansi.Truncate(status, m.width, "…") + "\n" + m.help.View(m.keys())
 }
@@ -312,4 +360,28 @@ func fit(s string, w, h int) string {
 		lines = append(lines, "")
 	}
 	return strings.Join(lines, "\n")
+}
+
+// applySummary is the status line after an apply: what was done, then the
+// error if one stopped it. The bool is true for an error.
+func applySummary(done []applied, err error) (string, bool) {
+	var parts []string
+	for _, d := range done {
+		key := "apply.disabled"
+		if d.Enable {
+			key = "apply.enabled"
+		}
+		parts = append(parts, i18n.T(key, d.Name))
+	}
+	if err != nil {
+		msg := i18n.T("apply.failed", err)
+		if errors.Is(err, state.ErrLocked) {
+			msg = errText(err)
+		}
+		return strings.Join(append(parts, msg), " · "), true
+	}
+	if len(parts) == 0 {
+		return i18n.T("apply.nothing"), false
+	}
+	return strings.Join(parts, " · "), false
 }

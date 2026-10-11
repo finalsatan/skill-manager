@@ -711,3 +711,25 @@ func (m skillsModel) detail(n int, st styles) []string {
 	}
 	return out
 }
+
+// changes converts the current scope's pending set into per-skill changes.
+func (m skillsModel) changes() []change {
+	var order []string
+	for _, a := range m.data.Agents {
+		order = append(order, a.ID)
+	}
+	names := map[string]string{}
+	for _, sec := range m.data.Sections {
+		for _, r := range sec.Rows {
+			if r.ID != "" {
+				names[r.ID] = r.Name
+			}
+		}
+	}
+	return m.pend[m.kind].changes(order, func(id string) string {
+		if n, ok := names[id]; ok {
+			return n
+		}
+		return id
+	})
+}
