@@ -24,10 +24,14 @@ type CustomAgent struct {
 	GlobalReads  []string `toml:"global_reads,omitempty"`
 }
 
+// Config is the contents of config.toml. Lang ("zh" or "en") picks the
+// language of the TUI; when empty it follows the locale environment variables
+// (see internal/i18n). SKILLET_LANG overrides it.
 type Config struct {
 	Store         string        `toml:"store"`
 	CheckInterval string        `toml:"check_interval,omitempty"`
 	LinkMode      string        `toml:"link_mode,omitempty"`
+	Lang          string        `toml:"lang,omitempty"`
 	Agents        []CustomAgent `toml:"agents,omitempty"`
 }
 
