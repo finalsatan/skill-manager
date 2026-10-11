@@ -129,7 +129,7 @@ func (m Model) update(msg tea.Msg) (Model, tea.Cmd) {
 		case msg.err != nil:
 			m.setError(msg.err)
 		default:
-			m.skills.setData(msg.data, msg.kind == scopeAll)
+			m.skills.setData(msg.data, msg.kind)
 		}
 	case tea.KeyPressMsg:
 		return m.handleKey(msg)
@@ -165,7 +165,7 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 	case key.Matches(msg, k.Scope):
 		m.scope = (m.scope + 1) % numScopes
 		m.status = ""
-		m.skills.reset()
+		m.skills.reset(m.scope)
 		return m, m.loadSkills()
 	case key.Matches(msg, k.Refresh):
 		m.status = ""
@@ -183,8 +183,12 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 		return m, nil
 	}
 	if m.tab == tabSkills {
+		m.status, m.statusErr = "", false
 		var cmd tea.Cmd
 		m.skills, cmd = m.skills.Update(msg)
+		if m.skills.notice != "" {
+			m.status, m.statusErr, m.skills.notice = m.skills.notice, false, ""
+		}
 		return m, cmd
 	}
 	return m, nil
@@ -282,7 +286,9 @@ func (m Model) body() string {
 // footer is the status line followed by the key help.
 func (m Model) footer() string {
 	status := ""
-	if m.status != "" {
+	if sum := m.skills.summary(); m.status == "" && m.tab == tabSkills && sum != "" {
+		status = m.st.Pending.Render(sum)
+	} else if m.status != "" {
 		if m.statusErr {
 			status = m.st.Danger.Render("! " + m.status)
 		} else {

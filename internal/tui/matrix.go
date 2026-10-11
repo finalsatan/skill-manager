@@ -21,6 +21,9 @@ const (
 )
 
 // glyph returns the cell's symbol. Colour is only a reinforcement.
+// visible reports whether the cell means the agent sees the skill.
+func (c cellState) visible() bool { return c == cellLinked || c == cellVia || c == cellProblem }
+
 func (c cellState) glyph() string {
 	switch c {
 	case cellLinked:
@@ -62,6 +65,7 @@ type row struct {
 	Description string
 	RepoDir     string
 	Head        string
+	InStore     bool // the skill still exists in the store
 
 	Cells   map[string]cellState // by agent id
 	Health  string               // worst health of its links; "" when not enabled
@@ -106,7 +110,7 @@ func buildRows(in buildInput) []row {
 		r := &row{Key: id, ID: id, Cells: map[string]cellState{}}
 		if s, ok := info[id]; ok {
 			r.Name, r.Repo, r.RelPath, r.Description = s.Name, s.Repo, s.RelPath, s.Description
-			r.RepoDir, r.Head, r.Pending = s.RepoDir, s.Head, s.Pending
+			r.RepoDir, r.Head, r.Pending, r.InStore = s.RepoDir, s.Head, s.Pending, true
 		} else {
 			// Removed upstream but still deployed (pinned): derive what we can.
 			r.Repo, r.RelPath, _ = strings.Cut(id, ":")

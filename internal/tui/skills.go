@@ -39,27 +39,34 @@ type skillsModel struct {
 	query   string
 	search  textinput.Model
 	editing bool // the search box has focus and gets every key
+
+	kind   scopeKind // the scope the data belongs to
+	col    int       // focused agent column
+	pend   map[scopeKind]pendingSet
+	notice string // a message for the status line, taken by the root
 }
 
 func newSkillsModel() skillsModel {
 	ti := textinput.New()
 	ti.Prompt = ""
 	ti.SetWidth(30)
-	return skillsModel{search: ti}
+	return skillsModel{search: ti, pend: map[scopeKind]pendingSet{}}
 }
 
 // capturing reports whether the tab wants every key, so the root must not
 // treat q, digits or s as commands.
 func (m skillsModel) capturing() bool { return m.editing }
 
-func (m *skillsModel) setData(d skillsData, all bool) {
-	m.data, m.all, m.loaded = d, all, true
+func (m *skillsModel) setData(d skillsData, kind scopeKind) {
+	m.data, m.kind, m.all, m.loaded = d, kind, kind == scopeAll, true
+	m.col = min(m.col, max(len(d.Agents)-1, 0))
 	m.rebuild()
 }
 
-// reset drops the data while a new scope loads.
-func (m *skillsModel) reset() {
-	*m = skillsModel{search: m.search, only: m.only, query: m.query, w: m.w, h: m.h}
+// reset drops the data while a new scope loads. Pending changes are kept per
+// scope, so they are still there when the user comes back.
+func (m *skillsModel) reset(kind scopeKind) {
+	*m = skillsModel{search: m.search, only: m.only, query: m.query, w: m.w, h: m.h, kind: kind, pend: m.pend}
 	m.layout()
 }
 
@@ -197,20 +204,26 @@ func (m *skillsModel) scrollToCursor() {
 type skillKeys struct {
 	Up, Down, PgUp, PgDown, Top, Bottom, Filter, Search key.Binding
 	Confirm, Clear                                      key.Binding
+	Left, Right, Toggle, ToggleRow, Review              key.Binding
 }
 
 func newSkillKeys() skillKeys {
 	return skillKeys{
-		Up:      key.NewBinding(key.WithKeys("up", "k"), key.WithHelp("↑/↓", i18n.T("help.move"))),
-		Down:    key.NewBinding(key.WithKeys("down", "j"), key.WithHelp("↓/j", i18n.T("help.move"))),
-		PgUp:    key.NewBinding(key.WithKeys("pgup"), key.WithHelp("PgUp/PgDn", i18n.T("help.page"))),
-		PgDown:  key.NewBinding(key.WithKeys("pgdown")),
-		Top:     key.NewBinding(key.WithKeys("g", "home"), key.WithHelp("g/G", i18n.T("help.ends"))),
-		Bottom:  key.NewBinding(key.WithKeys("G", "end")),
-		Filter:  key.NewBinding(key.WithKeys("f"), key.WithHelp("f", i18n.T("help.filter"))),
-		Search:  key.NewBinding(key.WithKeys("/"), key.WithHelp("/", i18n.T("help.search"))),
-		Confirm: key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", i18n.T("help.confirm"))),
-		Clear:   key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", i18n.T("help.clear"))),
+		Up:        key.NewBinding(key.WithKeys("up", "k"), key.WithHelp("↑/↓", i18n.T("help.move"))),
+		Down:      key.NewBinding(key.WithKeys("down", "j"), key.WithHelp("↓/j", i18n.T("help.move"))),
+		PgUp:      key.NewBinding(key.WithKeys("pgup"), key.WithHelp("PgUp/PgDn", i18n.T("help.page"))),
+		PgDown:    key.NewBinding(key.WithKeys("pgdown")),
+		Top:       key.NewBinding(key.WithKeys("g", "home"), key.WithHelp("g/G", i18n.T("help.ends"))),
+		Bottom:    key.NewBinding(key.WithKeys("G", "end")),
+		Filter:    key.NewBinding(key.WithKeys("f"), key.WithHelp("f", i18n.T("help.filter"))),
+		Search:    key.NewBinding(key.WithKeys("/"), key.WithHelp("/", i18n.T("help.search"))),
+		Left:      key.NewBinding(key.WithKeys("left", "h"), key.WithHelp("←/→", i18n.T("help.cell"))),
+		Right:     key.NewBinding(key.WithKeys("right", "l")),
+		Toggle:    key.NewBinding(key.WithKeys("space"), key.WithHelp("space", i18n.T("help.toggle"))),
+		ToggleRow: key.NewBinding(key.WithKeys("a"), key.WithHelp("a", i18n.T("help.row"))),
+		Review:    key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", i18n.T("help.review"))),
+		Confirm:   key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", i18n.T("help.confirm"))),
+		Clear:     key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", i18n.T("help.clear"))),
 	}
 }
 
@@ -220,7 +233,7 @@ func (m skillsModel) helpGroups() [][]key.Binding {
 	if m.editing {
 		return [][]key.Binding{{k.Confirm, k.Clear}}
 	}
-	return [][]key.Binding{{k.Up, k.PgUp, k.Top}, {k.Filter, k.Search}}
+	return [][]key.Binding{{k.Up, k.PgUp, k.Top, k.Left}, {k.Toggle, k.ToggleRow, k.Review, k.Clear}, {k.Filter, k.Search}}
 }
 
 // shortHelp is the compact footer: the few keys that fit on one line.
@@ -229,7 +242,7 @@ func (m skillsModel) shortHelp() []key.Binding {
 	if m.editing {
 		return []key.Binding{k.Confirm, k.Clear}
 	}
-	return []key.Binding{k.Up, k.Search, k.Filter}
+	return []key.Binding{k.Up, k.Left, k.Toggle, k.Review, k.Search}
 }
 
 func (m skillsModel) Update(msg tea.Msg) (skillsModel, tea.Cmd) {
@@ -280,8 +293,90 @@ func (m skillsModel) Update(msg tea.Msg) (skillsModel, tea.Cmd) {
 	case key.Matches(kp, k.Search):
 		m.editing = true
 		return m, m.search.Focus()
+	case key.Matches(kp, k.Left):
+		m.col = max(m.col-1, 0)
+	case key.Matches(kp, k.Right):
+		m.col = min(m.col+1, max(len(m.data.Agents)-1, 0))
+	case key.Matches(kp, k.Toggle):
+		m.toggle(false)
+	case key.Matches(kp, k.ToggleRow):
+		m.toggle(true)
+	case key.Matches(kp, k.Clear):
+		if len(m.pend[m.kind]) > 0 {
+			delete(m.pend, m.kind)
+		}
 	}
 	return m, nil
+}
+
+// pending is the current scope's pending set.
+func (m *skillsModel) pending() pendingSet {
+	if m.pend[m.kind] == nil {
+		m.pend[m.kind] = pendingSet{}
+	}
+	return m.pend[m.kind]
+}
+
+// wanted reports whether agent should see the row's skill once the pending
+// changes are applied, and whether that differs from now.
+func (m skillsModel) wanted(r *row, agent string) (want, changed bool) {
+	vis := r.Cells[agent].visible()
+	if w, ok := m.pend[m.kind][r.ID][agent]; ok {
+		return w, true
+	}
+	return vis, false
+}
+
+// readOnly gives the reason a row cannot be changed, as a message key.
+func (m skillsModel) readOnly(r *row) string {
+	switch {
+	case m.all:
+		return "ro.all"
+	case !r.managed():
+		return "ro.unmanaged"
+	case !r.InStore:
+		return "ro.gone"
+	}
+	return ""
+}
+
+// toggle flips the focused cell, or with whole the whole row: when every
+// agent would end up seeing the skill all are turned off, else all on.
+func (m *skillsModel) toggle(whole bool) {
+	it := m.selected()
+	if it == nil || len(m.data.Agents) == 0 {
+		return
+	}
+	r := it.r
+	if msgKey := m.readOnly(r); msgKey != "" {
+		m.notice = i18n.T(msgKey)
+		return
+	}
+	p := m.pending()
+	if !whole {
+		a := m.data.Agents[m.col].ID
+		now, _ := m.wanted(r, a)
+		p.set(r.ID, a, !now, r.Cells[a].visible())
+		return
+	}
+	all := true
+	for _, a := range m.data.Agents {
+		if w, _ := m.wanted(r, a.ID); !w {
+			all = false
+		}
+	}
+	for _, a := range m.data.Agents {
+		p.set(r.ID, a.ID, !all, r.Cells[a.ID].visible())
+	}
+}
+
+// summary describes the pending changes of the current scope, empty if none.
+func (m skillsModel) summary() string {
+	plus, minus := m.pend[m.kind].counts()
+	if plus+minus == 0 {
+		return ""
+	}
+	return i18n.T("pending.summary", plus+minus, plus, minus)
 }
 
 // columns is the widths of the matrix columns, in terminal cells.
@@ -377,33 +472,47 @@ func (m skillsModel) cellStyle(c cellState, st styles) lipgloss.Style {
 	return st.Dim
 }
 
-func (m skillsModel) renderRow(r *row, sel bool, c columns, st styles) string {
-	var b strings.Builder
-	if sel {
-		b.WriteString("▸ ")
-	} else {
-		b.WriteString("  ")
-	}
-	b.WriteString(padTo(r.Name, c.name))
-	b.WriteString("  ")
-	for i, a := range m.data.Agents {
-		cell := r.Cells[a.ID]
-		g := centerIn(cell.glyph(), c.agent[i])
-		if !sel {
-			g = m.cellStyle(cell, st).Render(g)
+// cellText returns the glyph shown for an agent's cell, with its style.
+func (m skillsModel) cellText(r *row, agent string, st styles) (string, lipgloss.Style) {
+	if want, changed := m.wanted(r, agent); changed {
+		if want {
+			return "+", st.Pending.Bold(true)
 		}
-		b.WriteString(g)
+		return "−", st.Pending.Bold(true)
 	}
-	b.WriteString(" ")
-	repo := padTo(shortRepo(r.Repo), c.repo)
-	if !sel {
-		repo = st.Dim.Render(repo)
+	c := r.Cells[agent]
+	return c.glyph(), m.cellStyle(c, st)
+}
+
+func (m skillsModel) renderRow(r *row, sel bool, c columns, st styles) string {
+	// Selected rows are drawn in reverse video piece by piece, so the focused
+	// cell can stand out: it is bracketed and not reversed.
+	var b strings.Builder
+	seg := func(text string, style lipgloss.Style) {
+		if sel {
+			b.WriteString(st.Cursor.Render(text))
+		} else {
+			b.WriteString(style.Render(text))
+		}
 	}
-	b.WriteString(repo)
-	b.WriteString("  ")
+	plainStyle := lipgloss.NewStyle()
+	marker := "  "
+	if sel {
+		marker = "▸ "
+	}
+	seg(marker+padTo(r.Name, c.name)+"  ", plainStyle)
+	for i, a := range m.data.Agents {
+		g, style := m.cellText(r, a.ID, st)
+		if sel && i == m.col {
+			cell := centerIn("["+g+"]", c.agent[i])
+			b.WriteString(style.Bold(true).Render(cell))
+			continue
+		}
+		seg(centerIn(g, c.agent[i]), style)
+	}
+	seg(" "+padTo(shortRepo(r.Repo), c.repo)+"  ", st.Dim)
 	// Status parts are styled one by one, so truncate by cells first.
 	room := c.status
-	var sb strings.Builder
 	for i, p := range statusParts(r) {
 		t := p.text
 		if i > 0 {
@@ -414,18 +523,14 @@ func (m skillsModel) renderRow(r *row, sel bool, c columns, st styles) string {
 		}
 		t = ansi.Truncate(t, room, "…")
 		room -= lipgloss.Width(t)
-		if sel {
-			sb.WriteString(t)
-		} else {
-			sb.WriteString(p.style(st).Render(t))
-		}
+		seg(t, p.style(st))
 	}
-	b.WriteString(sb.String())
 	line := b.String()
 	if sel {
-		// Pad so the reversed bar spans the full width.
-		line = padTo(line, m.w)
-		return st.Cursor.Render(line)
+		// Extend the bar to the full width.
+		if gap := m.w - lipgloss.Width(line); gap > 0 {
+			line += st.Cursor.Render(strings.Repeat(" ", gap))
+		}
 	}
 	return line
 }

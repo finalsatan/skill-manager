@@ -36,7 +36,7 @@ var en = map[string]string{
 	"health.wrong-target": "wrong target",
 	"health.broken":       "broken",
 	"health.missing":      "missing",
-	"legend":              "● linked  ◐ via another agent  ○ off  ✗ problem  ■ unmanaged (read-only)",
+	"legend":              "● linked  ◐ via other agent  ○ off  + enable  − disable  ✗ problem  ■ unmanaged",
 	"detail.id":           "ID",
 	"detail.repo":         "Repo",
 	"detail.commit":       "Commit",
@@ -60,6 +60,15 @@ var en = map[string]string{
 	"help.search":         "search",
 	"help.confirm":        "confirm",
 	"help.clear":          "clear",
+
+	"help.cell":       "cell",
+	"help.toggle":     "toggle",
+	"help.row":        "row",
+	"help.review":     "review",
+	"pending.summary": "%d changes pending (+%d −%d)",
+	"ro.all":          "The all-scopes view is read-only; switch to project or global scope (s).",
+	"ro.unmanaged":    "This skill is not managed by skillet and cannot be changed here.",
+	"ro.gone":         "This skill no longer exists in the store; it can only be disabled with `skillet disable`.",
 }
 
 var zh = map[string]string{
@@ -96,7 +105,7 @@ var zh = map[string]string{
 	"health.wrong-target": "目标错误",
 	"health.broken":       "损坏",
 	"health.missing":      "缺失",
-	"legend":              "● 已启用  ◐ 经其他 agent 目录可见  ○ 未启用  ✗ 有问题  ■ 未托管（只读）",
+	"legend":              "● 已启用  ◐ 经他处可见  ○ 未启用  + 启用  − 停用  ✗ 有问题  ■ 未托管",
 	"detail.id":           "标识",
 	"detail.repo":         "仓库",
 	"detail.commit":       "提交",
@@ -120,4 +129,13 @@ var zh = map[string]string{
 	"help.search":         "搜索",
 	"help.confirm":        "确认",
 	"help.clear":          "清除",
+
+	"help.cell":       "格",
+	"help.toggle":     "切换",
+	"help.row":        "整行",
+	"help.review":     "预览",
+	"pending.summary": "%d 项待应用（+%d −%d）",
+	"ro.all":          "「全部」视图是只读的，请用 s 切换到项目或全局范围。",
+	"ro.unmanaged":    "该技能不由 skillet 管理，无法在此修改。",
+	"ro.gone":         "该技能已不在存储中，只能用 `skillet disable` 停用。",
 }
