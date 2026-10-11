@@ -79,6 +79,14 @@ func (m *Manager) Status(s agents.Scope) ([]Entry, error) {
 	return out, nil
 }
 
+var healthRank = map[string]int{
+	"ok": 0, "outdated": 1, "modified": 2, "wrong-target": 3, "broken": 4, "missing": 5,
+}
+
+// HealthRank orders health states from best (ok) to worst; a matrix row shows
+// the worst of its entries. Other values, such as "unmanaged", rank as ok.
+func HealthRank(h string) int { return healthRank[h] }
+
 // Health checks one deployment against the filesystem.
 func (m *Manager) Health(d *state.Deployment) string {
 	src, err := m.DeploymentSource(d)

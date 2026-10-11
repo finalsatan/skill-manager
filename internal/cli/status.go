@@ -12,11 +12,6 @@ import (
 	"skillet/internal/deploy"
 )
 
-// healthRank orders states from best to worst; a matrix row shows the worst.
-var healthRank = map[string]int{
-	"ok": 0, "outdated": 1, "modified": 2, "wrong-target": 3, "broken": 4, "missing": 5,
-}
-
 type statusRow struct {
 	name    string
 	skill   string // empty for unmanaged
@@ -107,7 +102,7 @@ func printStatusMatrix(out io.Writer, all []agents.Agent, entries []deploy.Entry
 			rows[key] = r
 			keys = append(keys, key)
 		}
-		if e.Skill != "" && healthRank[e.Health] > healthRank[r.health] {
+		if e.Skill != "" && deploy.HealthRank(e.Health) > deploy.HealthRank(r.health) {
 			r.health = e.Health
 		}
 		if r.pin == "" {

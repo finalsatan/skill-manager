@@ -17,10 +17,11 @@ type keyMap struct {
 	Quit    key.Binding
 
 	// tab holds the active tab's own bindings, shown before the global ones.
-	tab [][]key.Binding
+	tab   [][]key.Binding
+	short []key.Binding // the tab's bindings for the one-line footer
 }
 
-func newKeyMap(tab [][]key.Binding) keyMap {
+func newKeyMap(tab [][]key.Binding, short []key.Binding) keyMap {
 	return keyMap{
 		Tabs:    key.NewBinding(key.WithKeys("1", "2", "3", "4", "tab", "shift+tab"), key.WithHelp("1-4", i18n.T("help.tabs"))),
 		Scope:   key.NewBinding(key.WithKeys("s"), key.WithHelp("s", i18n.T("help.scope"))),
@@ -28,6 +29,7 @@ func newKeyMap(tab [][]key.Binding) keyMap {
 		Help:    key.NewBinding(key.WithKeys("?"), key.WithHelp("?", i18n.T("help.help"))),
 		Quit:    key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", i18n.T("help.quit"))),
 		tab:     tab,
+		short:   short,
 	}
 }
 
@@ -35,12 +37,10 @@ func (k keyMap) global() []key.Binding {
 	return []key.Binding{k.Tabs, k.Scope, k.Refresh, k.Help, k.Quit}
 }
 
+// ShortHelp keeps quit and help in view even on a narrow terminal; the
+// full list is behind ?.
 func (k keyMap) ShortHelp() []key.Binding {
-	var out []key.Binding
-	for _, g := range k.tab {
-		out = append(out, g...)
-	}
-	return append(out, k.global()...)
+	return append(append([]key.Binding(nil), k.short...), k.Tabs, k.Scope, k.Help, k.Quit)
 }
 
 func (k keyMap) FullHelp() [][]key.Binding {

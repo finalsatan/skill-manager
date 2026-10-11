@@ -80,21 +80,34 @@ type Model struct {
 	status    string
 	statusErr bool
 
+	skills skillsModel
+
 	help help.Model
 }
 
 func New(opts Options) Model {
-	m := Model{opts: opts, isDark: true, help: help.New()}
+	m := Model{opts: opts, isDark: true, help: help.New(), skills: newSkillsModel()}
 	m.st = newStyles(m.isDark)
 	m.help.Styles = m.st.Help
 	return m
 }
 
 func (m Model) Init() tea.Cmd {
-	return tea.Batch(tea.RequestBackgroundColor, loadCounts())
+	return tea.Batch(tea.RequestBackgroundColor, loadCounts(), m.loadSkills())
 }
 
+// loadSkills loads the Skills tab's data for the current scope.
+func (m Model) loadSkills() tea.Cmd { return loadSkills(m.scope, m.opts.Project) }
+
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	m, cmd := m.update(msg)
+	// The footer's height can change (help toggle, status line), and so the
+	// room left for the tab.
+	m.skills.setSize(m.bodySize())
+	return m, cmd
+}
+
+func (m Model) update(msg tea.Msg) (Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
@@ -109,8 +122,24 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			break
 		}
 		m.countsLoaded, m.pending, m.issues = true, msg.pending, msg.issues
+	case skillsMsg:
+		switch {
+		case msg.kind != m.scope:
+			// Answer to a scope the user has already left.
+		case msg.err != nil:
+			m.setError(msg.err)
+		default:
+			m.skills.setData(msg.data, msg.kind == scopeAll)
+		}
 	case tea.KeyPressMsg:
 		return m.handleKey(msg)
+	default:
+		// Cursor blinks and the like belong to the search box.
+		if m.tab == tabSkills && m.skills.capturing() {
+			var cmd tea.Cmd
+			m.skills, cmd = m.skills.Update(msg)
+			return m, cmd
+		}
 	}
 	return m, nil
 }
@@ -119,30 +148,67 @@ func (m *Model) setError(err error) {
 	m.status, m.statusErr = errText(err), true
 }
 
-func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
-	k := newKeyMap(nil)
-	switch {
-	case key.Matches(msg, k.Quit):
+func (m Model) handleKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
+	k := newKeyMap(nil, nil)
+	if key.Matches(msg, k.Quit) && (msg.String() == "ctrl+c" || !m.capturing()) {
 		return m, tea.Quit
+	}
+	if m.capturing() {
+		var cmd tea.Cmd
+		m.skills, cmd = m.skills.Update(msg)
+		return m, cmd
+	}
+	switch {
 	case key.Matches(msg, k.Help):
 		m.help.ShowAll = !m.help.ShowAll
+		return m, nil
 	case key.Matches(msg, k.Scope):
 		m.scope = (m.scope + 1) % numScopes
 		m.status = ""
+		m.skills.reset()
+		return m, m.loadSkills()
 	case key.Matches(msg, k.Refresh):
 		m.status = ""
-		return m, loadCounts()
-	default:
-		switch msg.String() {
-		case "1", "2", "3", "4":
-			m.tab = tab(msg.String()[0] - '1')
-		case "tab":
-			m.tab = (m.tab + 1) % numTabs
-		case "shift+tab":
-			m.tab = (m.tab + numTabs - 1) % numTabs
-		}
+		return m, tea.Batch(loadCounts(), m.loadSkills())
+	}
+	switch msg.String() {
+	case "1", "2", "3", "4":
+		m.tab = tab(msg.String()[0] - '1')
+		return m, nil
+	case "tab":
+		m.tab = (m.tab + 1) % numTabs
+		return m, nil
+	case "shift+tab":
+		m.tab = (m.tab + numTabs - 1) % numTabs
+		return m, nil
+	}
+	if m.tab == tabSkills {
+		var cmd tea.Cmd
+		m.skills, cmd = m.skills.Update(msg)
+		return m, cmd
 	}
 	return m, nil
+}
+
+// capturing reports whether the active tab is reading text, in which case
+// letters and digits are not commands.
+func (m Model) capturing() bool { return m.tab == tabSkills && m.skills.capturing() }
+
+// keys returns the key bindings for the footer.
+func (m Model) keys() keyMap {
+	if m.tab == tabSkills {
+		return newKeyMap(m.skills.helpGroups(), m.skills.shortHelp())
+	}
+	return newKeyMap(nil, nil)
+}
+
+// bodySize is the room the active tab gets between the header and footer.
+func (m Model) bodySize() (w, h int) {
+	if m.width == 0 || m.height == 0 {
+		return 0, 0
+	}
+	h = m.height - lipgloss.Height(m.header()) - lipgloss.Height(m.footer())
+	return m.width, max(h, 1)
 }
 
 func (m Model) View() tea.View {
@@ -155,13 +221,10 @@ func (m Model) render() string {
 	if m.width == 0 || m.height == 0 {
 		return ""
 	}
-	header := m.header()
-	footer := m.footer()
-	bodyH := m.height - lipgloss.Height(header) - lipgloss.Height(footer)
-	if bodyH < 1 {
-		bodyH = 1
-	}
-	return header + "\n" + fit(m.body(), m.width, bodyH) + "\n" + footer
+	_, bodyH := m.bodySize()
+	out := m.header() + "\n" + fit(m.body(), m.width, bodyH) + "\n" + m.footer()
+	// Never exceed the window, however small it is.
+	return fit(out, m.width, m.height)
 }
 
 // header is the tab bar on the left and the scope indicator on the right.
@@ -186,7 +249,12 @@ func (m Model) header() string {
 	left := strings.Join(tabs, " ")
 	right := m.st.Dim.Render(i18n.T("scope.label", i18n.T(scopeKeys[m.scope])))
 	if m.scope == scopeProject && m.opts.Project.Dir != "" {
-		right += " " + m.st.Dim.Render(m.opts.Project.Dir)
+		// Keep the end of a long path: that is the part that tells projects apart.
+		dir := shortPath(m.opts.Project.Dir, agents.Scope{Global: true})
+		if avail := m.width - lipgloss.Width(left) - lipgloss.Width(right) - 3; lipgloss.Width(dir) > avail && avail > 1 {
+			dir = "…" + ansi.TruncateLeft(dir, lipgloss.Width(dir)-avail+1, "")
+		}
+		right += " " + m.st.Dim.Render(dir)
 	}
 	gap := m.width - lipgloss.Width(left) - lipgloss.Width(right)
 	if gap < 1 {
@@ -206,7 +274,7 @@ func (m Model) body() string {
 	case tabDoctor:
 		msg = i18n.T("doctor.soon")
 	default:
-		msg = i18n.T("loading")
+		return m.skills.View(m.st)
 	}
 	return "\n  " + m.st.Dim.Render(msg)
 }
@@ -221,7 +289,7 @@ func (m Model) footer() string {
 			status = m.st.Accent.Render(m.status)
 		}
 	}
-	return ansi.Truncate(status, m.width, "…") + "\n" + m.help.View(newKeyMap(nil))
+	return ansi.Truncate(status, m.width, "…") + "\n" + m.help.View(m.keys())
 }
 
 // fit cuts or pads s to exactly h lines of at most w cells. Widths are

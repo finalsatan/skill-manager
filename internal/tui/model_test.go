@@ -144,3 +144,12 @@ func TestViewHeightMatchesWindow(t *testing.T) {
 		t.Errorf("view is %d lines, want 30", h)
 	}
 }
+
+func TestLongProjectPathKeepsItsEnd(t *testing.T) {
+	m := newTestModel(t, i18n.ZH)
+	m.opts.Project.Dir = "/very/long/" + strings.Repeat("directory/", 12) + "my-project"
+	h := strings.SplitN(plain(m.View()), "\n", 2)[0]
+	if !strings.HasSuffix(h, "my-project") || lipgloss.Width(h) > 100 || !strings.Contains(h, "更新") {
+		t.Errorf("header %q (%d cells)", h, lipgloss.Width(h))
+	}
+}
