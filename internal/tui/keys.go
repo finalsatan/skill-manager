@@ -17,8 +17,10 @@ type keyMap struct {
 	Quit    key.Binding
 
 	// tab holds the active tab's own bindings, shown before the global ones.
-	tab   [][]key.Binding
-	short []key.Binding // the tab's bindings for the one-line footer
+	tab [][]key.Binding
+	// scoped is set on the Skills tab, the only one the scope switch affects.
+	scoped bool
+	short  []key.Binding // the tab's bindings for the one-line footer
 }
 
 func newKeyMap(tab [][]key.Binding, short []key.Binding) keyMap {
@@ -34,13 +36,20 @@ func newKeyMap(tab [][]key.Binding, short []key.Binding) keyMap {
 }
 
 func (k keyMap) global() []key.Binding {
+	if !k.scoped {
+		return []key.Binding{k.Tabs, k.Refresh, k.Help, k.Quit}
+	}
 	return []key.Binding{k.Tabs, k.Scope, k.Refresh, k.Help, k.Quit}
 }
 
 // ShortHelp keeps quit and help in view even on a narrow terminal; the
 // full list is behind ?.
 func (k keyMap) ShortHelp() []key.Binding {
-	return append(append([]key.Binding(nil), k.short...), k.Tabs, k.Scope, k.Help, k.Quit)
+	out := append(append([]key.Binding(nil), k.short...), k.Tabs)
+	if k.scoped {
+		out = append(out, k.Scope)
+	}
+	return append(out, k.Help, k.Quit)
 }
 
 func (k keyMap) FullHelp() [][]key.Binding {

@@ -164,3 +164,37 @@ func TestDoctorJumpToSkill(t *testing.T) {
 		t.Errorf("view:\n%s", plain(m.View()))
 	}
 }
+
+func TestDoctorTagsAndNoScopeOffSkills(t *testing.T) {
+	m := doctorAt(t, i18n.EN)
+	v := plain(m.View())
+	if !strings.Contains(v, "[fixable]") || !strings.Contains(v, "[manual]") || strings.Contains(v, "✓") {
+		t.Errorf("tags:\n%s", v)
+	}
+	// The scope has no effect here: not offered, not shown, not honoured.
+	if strings.Contains(v, "scope") || strings.Contains(v, "Scope") {
+		t.Errorf("scope shown on the Doctor tab:\n%s", v)
+	}
+	m = send(t, m, press("s"))
+	if m.scope != scopeProject {
+		t.Error("s changed the scope on the Doctor tab")
+	}
+	m = send(t, m, press("?"))
+	if strings.Contains(plain(m.View()), "scope") {
+		t.Error("full help lists scope")
+	}
+	for _, tb := range []string{"2", "3"} {
+		m = send(t, m, press(tb))
+		if v := plain(m.View()); strings.Contains(v, "Scope") {
+			t.Errorf("tab %s shows the scope:\n%s", tb, v)
+		}
+	}
+	m = send(t, m, press("1"))
+	if v := plain(m.View()); !strings.Contains(v, "Scope: project") {
+		t.Errorf("Skills tab lost the scope:\n%s", v)
+	}
+	zh := doctorAt(t, i18n.ZH)
+	if v := plain(zh.View()); !strings.Contains(v, "[可修复]") || !strings.Contains(v, "[需手动]") {
+		t.Errorf("zh tags:\n%s", v)
+	}
+}

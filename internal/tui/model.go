@@ -305,7 +305,7 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 	case key.Matches(msg, k.Help):
 		m.help.ShowAll = !m.help.ShowAll
 		return m, nil
-	case key.Matches(msg, k.Scope):
+	case key.Matches(msg, k.Scope) && m.tab == tabSkills:
 		m.scope = (m.scope + 1) % numScopes
 		m.status = ""
 		m.skills.reset(m.scope)
@@ -552,18 +552,19 @@ func (m Model) confirmUpdate() Model {
 
 // keys returns the key bindings for the footer.
 func (m Model) keys() keyMap {
-	if m.tab == tabSkills {
-		return newKeyMap(m.skills.helpGroups(), m.skills.shortHelp())
-	}
+	k := newKeyMap(nil, nil)
 	switch m.tab {
+	case tabSkills:
+		k = newKeyMap(m.skills.helpGroups(), m.skills.shortHelp())
 	case tabUpdates:
-		return newKeyMap(m.updates.helpGroups(), m.updates.shortHelp())
+		k = newKeyMap(m.updates.helpGroups(), m.updates.shortHelp())
 	case tabRepos:
-		return newKeyMap(m.repos.helpGroups(), m.repos.shortHelp())
+		k = newKeyMap(m.repos.helpGroups(), m.repos.shortHelp())
 	case tabDoctor:
-		return newKeyMap(m.doctor.helpGroups(), m.doctor.shortHelp())
+		k = newKeyMap(m.doctor.helpGroups(), m.doctor.shortHelp())
 	}
-	return newKeyMap(nil, nil)
+	k.scoped = m.tab == tabSkills
+	return k
 }
 
 // bodySize is the room the active tab gets between the header and footer.
@@ -615,8 +616,12 @@ func (m Model) header() string {
 		}
 	}
 	left := strings.Join(tabs, " ")
-	right := m.st.Dim.Render(i18n.T("scope.label", i18n.T(scopeKeys[m.scope])))
-	if m.scope == scopeProject && m.opts.Project.Dir != "" {
+	// The scope only matters on the Skills tab; elsewhere nothing is shown.
+	right := ""
+	if m.tab == tabSkills {
+		right = m.st.Dim.Render(i18n.T("scope.label", i18n.T(scopeKeys[m.scope])))
+	}
+	if m.tab == tabSkills && m.scope == scopeProject && m.opts.Project.Dir != "" {
 		// Keep the end of a long path: that is the part that tells projects apart.
 		dir := shortPath(m.opts.Project.Dir, agents.Scope{Global: true})
 		if avail := m.width - lipgloss.Width(left) - lipgloss.Width(right) - 3; lipgloss.Width(dir) > avail && avail > 1 {

@@ -213,6 +213,9 @@ var en = map[string]string{
 	"modal.unalias":       "Link name: the skill's own name",
 	"help.pin":            "pin",
 	"help.alias":          "alias",
+
+	"doctor.tag.fixable": "[fixable]",
+	"doctor.tag.manual":  "[manual]",
 }
 
 var zh = map[string]string{
@@ -426,4 +429,7 @@ var zh = map[string]string{
 	"modal.unalias":       "链接名：使用技能自己的名字",
 	"help.pin":            "固定",
 	"help.alias":          "别名",
+
+	"doctor.tag.fixable": "[可修复]",
+	"doctor.tag.manual":  "[需手动]",
 }

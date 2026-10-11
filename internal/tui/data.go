@@ -2,6 +2,7 @@ package tui
 
 import (
 	"errors"
+	"sync"
 
 	tea "charm.land/bubbletea/v2"
 
@@ -11,11 +12,20 @@ import (
 	"skillet/internal/state"
 )
 
+// storeMu serializes this process's own use of the store.
+var storeMu sync.Mutex
+
 // withManager opens the store for the duration of fn. The TUI never keeps a
 // Manager across user interaction: every load or operation runs in a tea.Cmd
 // that opens, works and closes. A store locked by another process is reported
 // as state.ErrLocked rather than waited for.
+//
+// Commands run concurrently inside the program (startup loads the counts and
+// the matrix at once), and the state lock is exclusive, so they take turns on
+// storeMu; only another skillet process can make OpenTry fail.
 func withManager(fn func(m *deploy.Manager) error) error {
+	storeMu.Lock()
+	defer storeMu.Unlock()
 	m, err := deploy.OpenTry()
 	if err != nil {
 		return err

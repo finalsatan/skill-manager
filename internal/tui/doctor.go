@@ -228,6 +228,7 @@ func (m doctorModel) View(st styles) string {
 	for _, it := range m.items {
 		kindW = max(kindW, lipgloss.Width(kindLabel(it.Kind)))
 	}
+	tagW := max(lipgloss.Width(i18n.T("doctor.tag.fixable")), lipgloss.Width(i18n.T("doctor.tag.manual")))
 	var lines []string
 	selLine := 0
 	group := -1
@@ -244,11 +245,11 @@ func (m doctorModel) View(st styles) string {
 		if i == m.cursor {
 			mark = "▸ "
 		}
-		fix := "  "
+		tag := i18n.T("doctor.tag.manual")
 		if it.Fixable() {
-			fix = "✓ "
+			tag = i18n.T("doctor.tag.fixable")
 		}
-		text := fmt.Sprintf("%s%s%s  %s", mark, fix, padTo(kindLabel(it.Kind), kindW), shortPath(it.Target, agents.Scope{Global: true}))
+		text := fmt.Sprintf("%s%s  %s  %s", mark, padTo(tag, tagW), padTo(kindLabel(it.Kind), kindW), shortPath(it.Target, agents.Scope{Global: true}))
 		text = padTo(text, m.w)
 		if i == m.cursor {
 			selLine = len(lines)
