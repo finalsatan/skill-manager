@@ -16,7 +16,7 @@ import (
 func fakePlans() []skillPlan {
 	return []skillPlan{{
 		Change: change{ID: "r:skills/docx", Name: "docx", Enable: []string{"claude"}},
-		Enable: &step{
+		Step: &step{
 			Agents: []string{"claude"},
 			Actions: []planAction{{
 				Action: deploy.Action{Kind: "create", Skill: "r:skills/docx", Target: proj + "/.claude/skills/docx", Mode: "symlink", Agents: []string{"claude"}},
@@ -127,7 +127,7 @@ func TestModalButtons(t *testing.T) {
 		t.Error("ctrl+c ignored")
 	}
 	// The result arrives: status line, pending cleared, reload started.
-	next, cmd = m.Update(applyMsg{kind: scopeProject, done: []applied{{"docx", true}, {"pptx", false}}})
+	next, cmd = m.Update(applyMsg{kind: scopeProject, done: []applied{{Name: "docx", Enable: []string{"claude"}}, {Name: "pptx", Disable: []string{"pi"}}}})
 	m = next.(Model)
 	if m.applying || m.skills.summary() != "" || cmd == nil {
 		t.Errorf("after apply: applying=%v summary=%q cmd=%v", m.applying, m.skills.summary(), cmd)
@@ -147,7 +147,7 @@ func toModal2(t *testing.T, m Model) Model {
 func TestModalApplyErrorShownInStatus(t *testing.T) {
 	m := toModal(t, i18n.ZH)
 	m = send(t, m, press("enter"))
-	m = send(t, m, applyMsg{kind: scopeProject, done: []applied{{"docx", true}}, err: errors.New("boom")})
+	m = send(t, m, applyMsg{kind: scopeProject, done: []applied{{Name: "docx", Enable: []string{"claude"}}}, err: errors.New("boom")})
 	v := plain(m.View())
 	if !strings.Contains(v, "已启用 docx · 失败：boom") {
 		t.Errorf("view:\n%s", v)

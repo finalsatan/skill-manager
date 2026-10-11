@@ -60,7 +60,7 @@ func TestToggleCells(t *testing.T) {
 		t.Fatalf("cells: %s %s", cellOf(m, "docx", "claude"), cellOf(m, "docx", "codex"))
 	}
 	v := plain(m.View())
-	if !strings.Contains(v, "2 changes pending (+2 −0)") || !strings.Contains(v, "+ enable  − disable") {
+	if !strings.Contains(v, "2 changes pending (+2)") || !strings.Contains(v, "+ enable  − disable") {
 		t.Errorf("view:\n%s", v)
 	}
 	// Toggling back removes the entry.
@@ -133,7 +133,7 @@ func TestReadOnlyRows(t *testing.T) {
 func TestPendingKeptPerScope(t *testing.T) {
 	m := loadedModel(t, i18n.ZH)
 	m = send(t, m, press("space"))
-	if !strings.Contains(plain(m.View()), "1 项待应用（+1 −0）") {
+	if !strings.Contains(plain(m.View()), "1 项待应用（+1）") {
 		t.Fatalf("summary:\n%s", plain(m.View()))
 	}
 	m = send(t, m, press("s")) // global: nothing pending there

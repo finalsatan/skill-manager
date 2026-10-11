@@ -56,25 +56,74 @@ func (m *Manager) Enable(o ChangeOpts) ([]Result, error) {
 	if len(o.Agents) == 0 {
 		return nil, errors.New("specify at least one agent with --agent")
 	}
-	if _, err := m.Agents.Resolve(o.Agents); err != nil {
+	if err := m.checkEnable(o, o.Agents); err != nil {
 		return nil, err
-	}
-	if o.Pin != "" && o.Unpin {
-		return nil, errors.New("--pin and --unpin cannot be combined")
-	}
-	if o.Alias != "" {
-		switch {
-		case len(o.Skills) != 1:
-			return nil, errors.New("--as renames one link, so it needs exactly one skill")
-		case !skill.ValidName(o.Alias):
-			return nil, fmt.Errorf("invalid alias %q: use lowercase letters, digits and single hyphens, 1-64 chars", o.Alias)
-		case o.Unalias:
-			return nil, errors.New("alias and unalias cannot be combined")
-		}
 	}
 	return m.change(o, func(served []string) []string {
 		return append(served, o.Agents...)
 	}, true)
+}
+
+// checkEnable validates the options of an enabling call for the given agents.
+func (m *Manager) checkEnable(o ChangeOpts, agentIDs []string) error {
+	if _, err := m.Agents.Resolve(agentIDs); err != nil {
+		return err
+	}
+	if o.Pin != "" && o.Unpin {
+		return errors.New("--pin and --unpin cannot be combined")
+	}
+	if o.Alias != "" {
+		switch {
+		case len(o.Skills) != 1:
+			return errors.New("--as renames one link, so it needs exactly one skill")
+		case !skill.ValidName(o.Alias):
+			return fmt.Errorf("invalid alias %q: use lowercase letters, digits and single hyphens, 1-64 chars", o.Alias)
+		case o.Unalias:
+			return errors.New("alias and unalias cannot be combined")
+		}
+	}
+	return nil
+}
+
+// Set serves each skill to the agents already served in the scope, plus enable,
+// minus disable, in one planned operation. Doing both at once differs from
+// calling Disable and Enable in turn: the links are planned for the final set
+// of agents only, so the dry run shows exactly what applying does, and a
+// skill is changed as a unit. o.Agents is ignored. With nothing to enable it
+// behaves like Disable (and may name a skill upstream deleted); otherwise like
+// Enable, including the Pin and Alias options.
+func (m *Manager) Set(o ChangeOpts, enable, disable []string) ([]Result, error) {
+	drop := map[string]bool{}
+	if len(disable) > 0 {
+		as, err := m.Agents.Resolve(disable)
+		if err != nil {
+			return nil, err
+		}
+		for _, a := range as {
+			drop[a.ID] = true
+		}
+	}
+	if len(enable) > 0 {
+		if err := m.checkEnable(o, enable); err != nil {
+			return nil, err
+		}
+		for _, id := range enable {
+			if drop[id] {
+				return nil, fmt.Errorf("agent %s is to be both enabled and disabled", id)
+			}
+		}
+	} else if len(drop) == 0 {
+		return nil, errors.New("nothing to enable or disable")
+	}
+	return m.change(o, func(served []string) []string {
+		var keep []string
+		for _, id := range served {
+			if !drop[id] {
+				keep = append(keep, id)
+			}
+		}
+		return append(keep, enable...)
+	}, len(enable) > 0)
 }
 
 // Disable stops each skill from being served to the given agents (all when

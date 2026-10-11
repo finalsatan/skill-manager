@@ -376,6 +376,12 @@ func (m skillsModel) summary() string {
 	if plus+minus == 0 {
 		return ""
 	}
+	switch {
+	case minus == 0:
+		return i18n.T("pending.summary.plus", plus)
+	case plus == 0:
+		return i18n.T("pending.summary.minus", minus)
+	}
 	return i18n.T("pending.summary", plus+minus, plus, minus)
 }
 

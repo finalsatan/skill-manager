@@ -20,10 +20,9 @@ type step struct {
 
 // skillPlan is the preview of one skill's change.
 type skillPlan struct {
-	Change  change
-	Disable *step
-	Enable  *step
-	Err     error
+	Change change
+	Step   *step // nil when planning failed
+	Err    error
 }
 
 // planAction is a filesystem action with the directory the link points at.
@@ -50,57 +49,45 @@ func toStep(m *deploy.Manager, res []deploy.Result, agentIDs []string) *step {
 	return st
 }
 
-// planChanges dry-runs each skill's change: Disable first, then Enable, as
-// applyChanges does. Nothing on disk changes. A skill that cannot be planned
-// carries its error and the others are still planned.
+// opts are the options of the Set call for one skill.
+func (c change) opts(s agents.Scope, dry bool) deploy.ChangeOpts {
+	return deploy.ChangeOpts{Skills: []string{c.ID}, Scope: s, DryRun: dry}
+}
+
+// planChanges dry-runs each skill's change with one Set call, the same call
+// applyChanges makes, so the preview is what applying does. Nothing on disk
+// changes. A skill that cannot be planned carries its error and the others are
+// still planned.
 func planChanges(m *deploy.Manager, s agents.Scope, cs []change) []skillPlan {
 	plans := make([]skillPlan, 0, len(cs))
 	for _, c := range cs {
 		p := skillPlan{Change: c}
-		if len(c.Disable) > 0 {
-			res, err := m.Disable(deploy.ChangeOpts{Skills: []string{c.ID}, Agents: c.Disable, Scope: s, DryRun: true})
-			if err != nil {
-				p.Err = err
-			} else {
-				p.Disable = toStep(m, res, c.Disable)
-			}
-		}
-		if p.Err == nil && len(c.Enable) > 0 {
-			res, err := m.Enable(deploy.ChangeOpts{Skills: []string{c.ID}, Agents: c.Enable, Scope: s, DryRun: true})
-			if err != nil {
-				p.Err = err
-			} else {
-				p.Enable = toStep(m, res, c.Enable)
-			}
+		res, err := m.Set(c.opts(s, true), c.Enable, c.Disable)
+		if err != nil {
+			p.Err = err
+		} else {
+			p.Step = toStep(m, res, append(append([]string(nil), c.Enable...), c.Disable...))
 		}
 		plans = append(plans, p)
 	}
 	return plans
 }
 
-// applied is one change that was made for real.
+// applied is one skill that was changed for real.
 type applied struct {
-	Name   string
-	Enable bool
+	Name            string
+	Enable, Disable []string
 }
 
-// applyChanges makes the changes, Disable then Enable per skill, and stops at
-// the first error. It returns what was done before that.
+// applyChanges makes the changes, one Set call per skill, and stops at the
+// first error. It returns what was done before that.
 func applyChanges(m *deploy.Manager, s agents.Scope, cs []change) ([]applied, error) {
 	var done []applied
 	for _, c := range cs {
-		if len(c.Disable) > 0 {
-			if _, err := m.Disable(deploy.ChangeOpts{Skills: []string{c.ID}, Agents: c.Disable, Scope: s}); err != nil {
-				return done, fmt.Errorf("%s: %w", c.Name, err)
-			}
-			done = append(done, applied{c.Name, false})
+		if _, err := m.Set(c.opts(s, false), c.Enable, c.Disable); err != nil {
+			return done, fmt.Errorf("%s: %w", c.Name, err)
 		}
-		if len(c.Enable) > 0 {
-			if _, err := m.Enable(deploy.ChangeOpts{Skills: []string{c.ID}, Agents: c.Enable, Scope: s}); err != nil {
-				return done, fmt.Errorf("%s: %w", c.Name, err)
-			}
-			done = append(done, applied{c.Name, true})
-		}
+		done = append(done, applied{c.Name, c.Enable, c.Disable})
 	}
 	return done, nil
 }

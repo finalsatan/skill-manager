@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strings"
 	"testing"
@@ -335,5 +336,57 @@ func TestDisableKeepsUserReplacedLink(t *testing.T) {
 	}
 	if _, err := os.Lstat(target); err != nil {
 		t.Error("user's link was removed")
+	}
+}
+
+// Disabling claude and enabling codex in one Set plans the links for the final
+// agent set only: the dry run shows what applying does.
+func TestSetMixedEnableDisable(t *testing.T) {
+	e := setup(t, "auto")
+	e.enable(t, []string{"pdf"}, "claude", "opencode") // one link in .claude/skills serves both
+
+	o := ChangeOpts{Skills: []string{"pdf"}, Scope: e.proj}
+	dry := o
+	dry.DryRun = true
+	plan, err := e.m.Set(dry, []string{"codex"}, []string{"claude"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(e.targets(), " "); got != ".claude/skills/pdf=claude,opencode" {
+		t.Fatalf("dry run changed the state: %s", got)
+	}
+	if _, err := os.Lstat(filepath.Join(e.proj.Dir, ".agents/skills/pdf")); !os.IsNotExist(err) {
+		t.Fatal("dry run created a link")
+	}
+
+	res, err := e.m.Set(o, []string{"codex"}, []string{"claude"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// OpenCode also reads .agents/skills, so one link serves both.
+	want := []string{".agents/skills/pdf=codex,opencode"}
+	if got := e.targets(); strings.Join(got, " ") != strings.Join(want, " ") {
+		t.Fatalf("targets = %v, want %v", got, want)
+	}
+	if _, err := os.Lstat(filepath.Join(e.proj.Dir, ".claude/skills/pdf")); !os.IsNotExist(err) {
+		t.Error(".claude link not removed")
+	}
+	if v := res[0].Visible; v["claude"] != 0 || v["codex"] == 0 || v["opencode"] == 0 {
+		t.Errorf("visible = %v", v)
+	}
+	// A dry run reports the requested mode ("auto"), apply the one it used.
+	for i := range plan[0].Actions {
+		plan[0].Actions[i].Mode, res[0].Actions[i].Mode = "", ""
+	}
+	if !reflect.DeepEqual(plan[0].Actions, res[0].Actions) || !reflect.DeepEqual(plan[0].Visible, res[0].Visible) {
+		t.Errorf("dry run %+v differs from apply %+v", plan[0], res[0])
+	}
+
+	// Errors: nothing to do, and the same agent on both sides.
+	if _, err := e.m.Set(o, nil, nil); err == nil {
+		t.Error("empty Set accepted")
+	}
+	if _, err := e.m.Set(o, []string{"codex"}, []string{"codex"}); err == nil {
+		t.Error("conflicting Set accepted")
 	}
 }

@@ -367,11 +367,12 @@ func fit(s string, w, h int) string {
 func applySummary(done []applied, err error) (string, bool) {
 	var parts []string
 	for _, d := range done {
-		key := "apply.disabled"
-		if d.Enable {
-			key = "apply.enabled"
+		if len(d.Enable) > 0 {
+			parts = append(parts, i18n.T("apply.enabled", d.Name))
 		}
-		parts = append(parts, i18n.T(key, d.Name))
+		if len(d.Disable) > 0 {
+			parts = append(parts, i18n.T("apply.disabled", d.Name))
+		}
 	}
 	if err != nil {
 		msg := i18n.T("apply.failed", err)

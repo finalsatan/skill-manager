@@ -87,7 +87,7 @@ func TestPreviewThenApplyOnRealStore(t *testing.T) {
 	if pm.err != nil || len(pm.plans) != 1 || pm.plans[0].Err != nil || pm.manifest {
 		t.Fatalf("preview: %+v", pm)
 	}
-	en := pm.plans[0].Enable
+	en := pm.plans[0].Step
 	if en == nil || len(en.Actions) != 2 || en.Visible["claude"] == 0 || en.Visible["codex"] == 0 {
 		t.Fatalf("enable step: %+v", en)
 	}
@@ -106,7 +106,7 @@ func TestPreviewThenApplyOnRealStore(t *testing.T) {
 	m.Close()
 
 	am := applyCmd(scopeProject, rs.proj, cs)().(applyMsg)
-	if am.err != nil || len(am.done) != 1 || !am.done[0].Enable || am.done[0].Name != "pdf" {
+	if am.err != nil || len(am.done) != 1 || len(am.done[0].Enable) == 0 || am.done[0].Name != "pdf" {
 		t.Fatalf("apply: %+v", am)
 	}
 	for _, p := range []string{filepath.Join(rs.links, "pdf"), filepath.Join(rs.proj.Dir, ".agents", "skills", "pdf")} {
@@ -127,22 +127,28 @@ func TestPreviewThenApplyOnRealStore(t *testing.T) {
 		t.Fatal(err)
 	}
 	m.Close()
+	// pdf: stop claude, start pi, as one change; docx: start claude.
 	cs2 := []change{
-		{ID: rs.pdf, Name: "pdf", Disable: []string{"codex"}},
+		{ID: rs.pdf, Name: "pdf", Enable: []string{"pi"}, Disable: []string{"claude"}},
 		{ID: rs.docx, Name: "docx", Enable: []string{"claude"}},
 	}
+	agentsDir := filepath.Join(rs.proj.Dir, ".agents", "skills", "pdf")
 	pm = previewCmd(scopeProject, rs.proj, cs2)().(previewMsg)
-	if !pm.manifest || pm.plans[0].Disable == nil || pm.plans[1].Enable == nil {
+	if !pm.manifest || pm.plans[0].Step == nil || pm.plans[1].Step == nil {
 		t.Fatalf("preview 2: %+v", pm)
 	}
-	if !exists(filepath.Join(rs.proj.Dir, ".agents", "skills", "pdf")) || exists(filepath.Join(rs.links, "docx")) {
+	if !exists(filepath.Join(rs.links, "pdf")) || exists(filepath.Join(rs.links, "docx")) {
 		t.Fatal("second preview changed the disk")
 	}
+	// The preview of the mixed change is the plan applying follows.
+	if v := pm.plans[0].Step.Visible; v["claude"] != 0 || v["codex"] == 0 || v["pi"] == 0 {
+		t.Errorf("pdf preview visibility: %v", v)
+	}
 	am = applyCmd(scopeProject, rs.proj, cs2)().(applyMsg)
-	if am.err != nil || len(am.done) != 2 || am.done[0].Enable || !am.done[1].Enable {
+	if am.err != nil || len(am.done) != 2 || len(am.done[0].Disable) != 1 || len(am.done[0].Enable) != 1 {
 		t.Fatalf("apply 2: %+v", am)
 	}
-	if exists(filepath.Join(rs.proj.Dir, ".agents", "skills", "pdf")) || !exists(filepath.Join(rs.links, "docx")) || !exists(filepath.Join(rs.links, "pdf")) {
+	if !exists(agentsDir) || exists(filepath.Join(rs.links, "pdf")) || !exists(filepath.Join(rs.links, "docx")) {
 		t.Error("links after second apply are wrong")
 	}
 	data, err := os.ReadFile(filepath.Join(rs.proj.Dir, "skillet.toml"))
@@ -179,8 +185,8 @@ func TestPreviewErrorAndApplyStopsAtFirstError(t *testing.T) {
 }
 
 func TestApplySummary(t *testing.T) {
-	s, isErr := applySummary([]applied{{"docx", true}, {"pptx", false}}, nil)
-	if isErr || s != "Enabled docx · Disabled pptx" {
+	s, isErr := applySummary([]applied{{Name: "docx", Enable: []string{"claude"}}, {Name: "pptx", Disable: []string{"pi"}}, {Name: "both", Enable: []string{"a"}, Disable: []string{"b"}}}, nil)
+	if isErr || s != "Enabled docx · Disabled pptx · Enabled both · Disabled both" {
 		t.Errorf("%q %v", s, isErr)
 	}
 	if s, _ := applySummary(nil, nil); s != "Nothing changed." {

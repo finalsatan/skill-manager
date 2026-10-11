@@ -133,9 +133,16 @@ func visibleText(v map[string]int, order []string) string {
 	return strings.Join(parts, ", ")
 }
 
-// stepLines renders one Disable or Enable step.
-func stepLines(titleKey string, st *step, s agents.Scope, order []string, sty styles) []string {
-	out := []string{"  " + sty.Bold.Render(i18n.T(titleKey, strings.Join(st.Agents, ", ")))}
+// stepLines renders one skill's plan: which agents are enabled and disabled,
+// then the combined link actions and who sees the skill afterwards.
+func stepLines(c change, st *step, s agents.Scope, order []string, sty styles) []string {
+	var out []string
+	if len(c.Enable) > 0 {
+		out = append(out, "  "+sty.Bold.Render(i18n.T("modal.enable", strings.Join(c.Enable, ", "))))
+	}
+	if len(c.Disable) > 0 {
+		out = append(out, "  "+sty.Bold.Render(i18n.T("modal.disable", strings.Join(c.Disable, ", "))))
+	}
 	if len(st.Actions) == 0 {
 		out = append(out, "    "+sty.Dim.Render(i18n.T("modal.nochange")))
 	}
@@ -191,11 +198,8 @@ func (m Model) contentLines() []string {
 			out = append(out, "")
 		}
 		out = append(out, sty.Bold.Render(p.Change.Name)+" "+sty.Dim.Render(p.Change.ID))
-		if p.Disable != nil {
-			out = append(out, stepLines("modal.disable", p.Disable, md.scope, order, sty)...)
-		}
-		if p.Enable != nil {
-			out = append(out, stepLines("modal.enable", p.Enable, md.scope, order, sty)...)
+		if p.Step != nil {
+			out = append(out, stepLines(p.Change, p.Step, md.scope, order, sty)...)
 		}
 		if p.Err != nil {
 			out = append(out, "  "+sty.Danger.Render("✗ "+p.Err.Error()))
