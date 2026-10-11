@@ -72,6 +72,17 @@ type Issue struct {
 	Err    error    `json:"-"` // set when a fix was attempted and failed
 }
 
+// Fixable reports whether `doctor --fix` can repair the issue. Name clashes,
+// hand-edited copies, a missing clone and the informational "pending" finding
+// need the user.
+func (i Issue) Fixable() bool {
+	switch i.Kind {
+	case "orphan", "orphan-pin", "pin-missing", "project-gone", "missing", "broken", "wrong-target", "outdated":
+		return true
+	}
+	return false
+}
+
 // MarshalJSON adds the fix error as a string.
 func (i Issue) MarshalJSON() ([]byte, error) {
 	type plain Issue

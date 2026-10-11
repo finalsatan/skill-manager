@@ -87,6 +87,7 @@ type Model struct {
 	skills  skillsModel
 	updates updatesModel
 	repos   reposModel
+	doctor  doctorModel
 
 	modal    modalState
 	applying bool   // an operation is running in a command; input is ignored meanwhile
@@ -123,6 +124,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	m.skills.setSize(m.bodySize())
 	m.updates.setSize(m.bodySize())
 	m.repos.setSize(m.bodySize())
+	m.doctor.setSize(m.bodySize())
 	return m, cmd
 }
 
@@ -210,6 +212,21 @@ func (m Model) update(msg tea.Msg) (Model, tea.Cmd) {
 		}
 		m.status, m.statusErr = i18n.T("repos.added", shortRepo(msg.plan.ID), msg.skills, shortPath(msg.plan.Dir, agents.Scope{Global: true})), false
 		return m, tea.Batch(loadRepos(), loadCounts(), m.loadSkills())
+	case doctorMsg:
+		if msg.err != nil {
+			m.setError(msg.err)
+			break
+		}
+		m.doctor.setItems(msg.items)
+	case doctorFixMsg:
+		m.applying = false
+		if msg.err != nil {
+			m.status, m.statusErr = i18n.T("apply.failed", msg.err), true
+		} else {
+			fixed, failed, open := fixSummary(msg.issues)
+			m.status, m.statusErr = i18n.T("doctor.fixed", fixed, failed, open), failed > 0
+		}
+		return m, tea.Batch(loadDoctor(), loadCounts(), m.loadSkills(), loadRepos())
 	case removePlanMsg:
 		return m.openRemoveDialog(msg), nil
 	case removeDoneMsg:
@@ -276,6 +293,11 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 			return m2, cmd
 		}
 	}
+	if m.tab == tabDoctor {
+		if m2, cmd, ok := m.doctorKey(msg); ok {
+			return m2, cmd
+		}
+	}
 	switch {
 	case key.Matches(msg, k.Help):
 		m.help.ShowAll = !m.help.ShowAll
@@ -288,8 +310,11 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 	case key.Matches(msg, k.Refresh):
 		m.status = ""
 		cmds := []tea.Cmd{loadCounts(), m.loadSkills()}
-		if m.tab == tabRepos {
+		switch m.tab {
+		case tabRepos:
 			cmds = append(cmds, loadRepos())
+		case tabDoctor:
+			cmds = append(cmds, loadDoctor())
 		}
 		return m, tea.Batch(cmds...)
 	}
@@ -330,8 +355,54 @@ func (m Model) switchTab(t tab) (Model, tea.Cmd) {
 		return m, loadUpdates(false)
 	case tabRepos:
 		return m, loadRepos()
+	case tabDoctor:
+		return m, loadDoctor()
 	}
 	return m, nil
+}
+
+// doctorKey handles the keys that act on the Doctor tab.
+func (m Model) doctorKey(msg tea.KeyPressMsg) (Model, tea.Cmd, bool) {
+	k := newDoctorKeys()
+	m.status, m.statusErr = "", false
+	switch {
+	case key.Matches(msg, k.Fix):
+		return m.openFixDialog(), nil, true
+	case key.Matches(msg, k.Skill):
+		it := m.doctor.selected()
+		switch {
+		case it == nil:
+		case it.Skill == "":
+			m.status = i18n.T("doctor.noskill")
+		default:
+			m.skills.setQuery(it.Skill)
+			m.tab = tabSkills
+		}
+		return m, nil, true
+	case key.Matches(msg, k.Up), key.Matches(msg, k.Down):
+		m.doctor = m.doctor.Update(msg)
+		return m, nil, true
+	}
+	return m, nil, false
+}
+
+// openFixDialog lists what `doctor --fix` would repair and asks.
+func (m Model) openFixDialog() Model {
+	fix := m.doctor.fixable()
+	d := modalState{title: i18n.T("doctor.fix.title"), okKey: "doctor.fix.ok"}
+	if len(fix) == 0 {
+		d.body, d.disabled = []string{m.st.Dim.Render(i18n.T("doctor.fix.none"))}, true
+	} else {
+		d.body = []string{m.st.Bold.Render(i18n.T("doctor.fix.intro"))}
+		for _, it := range fix {
+			d.body = append(d.body, "  "+kindLabel(it.Kind)+"  "+m.st.Dim.Render(shortPath(it.Target, agents.Scope{Global: true})))
+		}
+	}
+	d.onOK = func(m Model, _ string) (Model, tea.Cmd) {
+		m, tick := m.startBusy("doctor.fixing")
+		return m, tea.Batch(fixCmd(), tick)
+	}
+	return m.openDialog(d)
 }
 
 // reposKey handles the keys that act on the Repos tab.
@@ -483,6 +554,8 @@ func (m Model) keys() keyMap {
 		return newKeyMap(m.updates.helpGroups(), m.updates.shortHelp())
 	case tabRepos:
 		return newKeyMap(m.repos.helpGroups(), m.repos.shortHelp())
+	case tabDoctor:
+		return newKeyMap(m.doctor.helpGroups(), m.doctor.shortHelp())
 	}
 	return newKeyMap(nil, nil)
 }
@@ -554,18 +627,15 @@ func (m Model) header() string {
 
 // body renders the active tab.
 func (m Model) body() string {
-	var msg string
 	switch m.tab {
 	case tabUpdates:
 		return m.updates.View(m.st)
 	case tabRepos:
 		return m.repos.View(m.st)
 	case tabDoctor:
-		msg = i18n.T("doctor.soon")
-	default:
-		return m.skills.View(m.st)
+		return m.doctor.View(m.st)
 	}
-	return "\n  " + m.st.Dim.Render(msg)
+	return m.skills.View(m.st)
 }
 
 // footer is the status line followed by the key help.

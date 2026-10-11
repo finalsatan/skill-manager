@@ -366,8 +366,7 @@ func countIssues(issues []deploy.Issue) (open, fixable int) {
 			continue
 		}
 		open++
-		switch is.Kind {
-		case "orphan", "orphan-pin", "pin-missing", "project-gone", "missing", "broken", "wrong-target", "outdated":
+		if is.Fixable() {
 			fixable++
 		}
 	}
