@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
@@ -24,6 +25,19 @@ type modalState struct {
 	manifest bool
 	button   int // 0 Apply, 1 Back
 	scroll   int
+
+	// Generic dialogs (updates, repositories, doctor, pin, alias) set these
+	// instead of the skill-change fields above.
+	generic  bool
+	title    string
+	body     []string // content, already styled
+	okKey    string   // i18n key of the primary button; modal.apply when empty
+	disabled bool     // the primary button cannot be pressed
+	prompt   string   // label of the text input, when there is one
+	input    textinput.Model
+	hasInput bool
+	// onOK runs when the primary button is pressed; input is the typed text.
+	onOK func(m Model, input string) (Model, tea.Cmd)
 }
 
 const (
@@ -34,6 +48,9 @@ const (
 // blocked reports whether the changes cannot be applied: the dry-run failed
 // for the store or for some skill.
 func (s modalState) blocked() bool {
+	if s.generic {
+		return s.disabled
+	}
 	if s.openErr != nil {
 		return true
 	}
@@ -46,7 +63,12 @@ func (s modalState) blocked() bool {
 }
 
 // canApply is true when Apply may be pressed.
-func (s modalState) canApply() bool { return !s.loading && !s.blocked() && len(s.plans) > 0 }
+func (s modalState) canApply() bool {
+	if s.generic {
+		return !s.disabled
+	}
+	return !s.loading && !s.blocked() && len(s.plans) > 0
+}
 
 // modalKey handles a key press while the dialog is open. It returns the
 // updated model and, on Apply, the command that applies the changes.
@@ -62,6 +84,25 @@ func (m Model) modalKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 
 func (m Model) modalKeyRaw(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 	md := m.modal
+	if md.hasInput {
+		switch msg.String() {
+		case "ctrl+c":
+			return m, tea.Quit
+		case "esc":
+			m.modal = modalState{}
+		case "enter":
+			if md.canApply() {
+				m.modal = modalState{}
+				return md.onOK(m, strings.TrimSpace(md.input.Value()))
+			}
+		default:
+			var cmd tea.Cmd
+			md.input, cmd = md.input.Update(msg)
+			m.modal = md
+			return m, cmd
+		}
+		return m, nil
+	}
 	switch msg.String() {
 	case "ctrl+c":
 		return m, tea.Quit
@@ -94,11 +135,28 @@ func (m Model) modalKeyRaw(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 			break
 		}
 		m.modal = modalState{}
-		m.applying = true
-		m.status = ""
-		return m, tea.Batch(applyCmd(md.kind, md.scope, md.changes), m.spin.Tick)
+		if md.generic {
+			return md.onOK(m, "")
+		}
+		m, tick := m.startBusy("apply.applying")
+		return m, tea.Batch(applyCmd(md.kind, md.scope, md.changes), tick)
 	}
 	return m, nil
+}
+
+// startBusy marks the model busy with an operation running in a command: the
+// footer shows the spinner with the message for key, and keys are ignored
+// until the result arrives. The returned command animates the spinner.
+func (m Model) startBusy(key string) (Model, tea.Cmd) {
+	m.applying, m.busyKey, m.status = true, key, ""
+	return m, m.spin.Tick
+}
+
+// openDialog shows a generic dialog.
+func (m Model) openDialog(d modalState) Model {
+	d.open, d.generic = true, true
+	m.modal = d
+	return m
 }
 
 // startPreview opens the dialog and starts the dry-run for the current
@@ -185,6 +243,13 @@ func stepLines(c change, st *step, s agents.Scope, order []string, sty styles) [
 func (m Model) contentLines() []string {
 	md := m.modal
 	sty := m.st
+	if md.generic {
+		out := md.body
+		if md.hasInput {
+			out = append([]string{sty.Bold.Render(md.prompt) + " " + md.input.View(), ""}, out...)
+		}
+		return out
+	}
 	if md.loading {
 		return []string{sty.Dim.Render(i18n.T("modal.loading"))}
 	}
@@ -239,6 +304,13 @@ func (m Model) modalBox(w, h int) []string {
 	shown := content[scroll : scroll+room]
 
 	title := m.st.Bold.Render(i18n.T("modal.title")) + " " + m.st.Dim.Render(scopeTitle(md.kind, md.scope))
+	if md.generic {
+		title = m.st.Bold.Render(md.title)
+	}
+	okKey := "modal.apply"
+	if md.okKey != "" {
+		okKey = md.okKey
+	}
 	if maxScroll > 0 {
 		title += m.st.Dim.Render(fmt.Sprintf("  (%d/%d)", scroll+1, maxScroll+1))
 	}
@@ -252,7 +324,7 @@ func (m Model) modalBox(w, h int) []string {
 		}
 		return t
 	}
-	buttons := label(btnApply, "modal.apply", md.canApply()) + "   " + label(btnBack, "modal.back", true)
+	buttons := label(btnApply, okKey, md.canApply()) + "   " + label(btnBack, "modal.back", true)
 
 	lines := append([]string{title, ""}, shown...)
 	lines = append(lines, "", buttons+"   "+m.st.Dim.Render(i18n.T("modal.hint")))

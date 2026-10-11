@@ -83,17 +83,19 @@ type Model struct {
 	status    string
 	statusErr bool
 
-	skills skillsModel
+	skills  skillsModel
+	updates updatesModel
 
 	modal    modalState
-	applying bool // changes are being applied; input is ignored meanwhile
+	applying bool   // an operation is running in a command; input is ignored meanwhile
+	busyKey  string // i18n key of what it is doing
 	spin     spinner.Model
 
 	help help.Model
 }
 
 func New(opts Options) Model {
-	m := Model{opts: opts, isDark: true, help: help.New(), skills: newSkillsModel(), spin: spinner.New(spinner.WithSpinner(spinner.Dot))}
+	m := Model{opts: opts, isDark: true, help: help.New(), skills: newSkillsModel(), updates: newUpdatesModel(), spin: spinner.New(spinner.WithSpinner(spinner.Dot))}
 	m.restyle()
 	return m
 }
@@ -117,6 +119,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// The footer's height can change (help toggle, status line), and so the
 	// room left for the tab.
 	m.skills.setSize(m.bodySize())
+	m.updates.setSize(m.bodySize())
 	return m, cmd
 }
 
@@ -152,6 +155,41 @@ func (m Model) update(msg tea.Msg) (Model, tea.Cmd) {
 		delete(m.skills.pend, msg.kind)
 		m.status, m.statusErr = applySummary(msg.done, msg.err)
 		return m, tea.Batch(loadCounts(), m.loadSkills())
+	case updatesMsg:
+		if msg.fetched {
+			m.applying = false
+		}
+		if msg.err != nil {
+			m.setError(msg.err)
+			break
+		}
+		m.updates.setItems(msg.items)
+		cmds := []tea.Cmd{m.updates.wantDiff()}
+		if msg.fetched {
+			m.status, m.statusErr = i18n.T("updates.checked.ok"), false
+			if len(msg.items) > 0 {
+				m.status = i18n.T("updates.checked.n", len(msg.items))
+			}
+			cmds = append(cmds, loadCounts())
+		}
+		return m, tea.Batch(cmds...)
+	case diffMsg:
+		m.updates.setDiff(msg)
+	case fullDiffMsg:
+		if msg.err != nil {
+			m.setError(msg.err)
+			break
+		}
+		m.updates.full, m.updates.fullOf = true, msg.repo
+		m.updates.vp.SetContent(msg.text)
+		if strings.TrimSpace(msg.text) == "" {
+			m.updates.vp.SetContent(i18n.T("updates.nodiff"))
+		}
+		m.updates.vp.GotoTop()
+	case updateDoneMsg:
+		m.applying = false
+		m.status, m.statusErr = updateSummary(msg.done, msg.err)
+		return m, tea.Batch(loadCounts(), loadUpdates(false), m.loadSkills())
 	case spinner.TickMsg:
 		if m.applying {
 			var cmd tea.Cmd
@@ -191,8 +229,17 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 	}
 	if m.capturing() {
 		var cmd tea.Cmd
-		m.skills, cmd = m.skills.Update(msg)
+		if m.tab == tabUpdates {
+			m.updates, cmd = m.updates.Update(msg)
+		} else {
+			m.skills, cmd = m.skills.Update(msg)
+		}
 		return m, cmd
+	}
+	if m.tab == tabUpdates {
+		if m2, cmd, ok := m.updatesKey(msg); ok {
+			return m2, cmd
+		}
 	}
 	switch {
 	case key.Matches(msg, k.Help):
@@ -209,14 +256,11 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 	}
 	switch msg.String() {
 	case "1", "2", "3", "4":
-		m.tab = tab(msg.String()[0] - '1')
-		return m, nil
+		return m.switchTab(tab(msg.String()[0] - '1'))
 	case "tab":
-		m.tab = (m.tab + 1) % numTabs
-		return m, nil
+		return m.switchTab((m.tab + 1) % numTabs)
 	case "shift+tab":
-		m.tab = (m.tab + numTabs - 1) % numTabs
-		return m, nil
+		return m.switchTab((m.tab + numTabs - 1) % numTabs)
 	}
 	if m.tab == tabSkills && msg.String() == "enter" {
 		return m.startPreview()
@@ -235,12 +279,72 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 
 // capturing reports whether the active tab is reading text, in which case
 // letters and digits are not commands.
-func (m Model) capturing() bool { return m.tab == tabSkills && m.skills.capturing() }
+func (m Model) capturing() bool {
+	return (m.tab == tabSkills && m.skills.capturing()) || (m.tab == tabUpdates && m.updates.capturing())
+}
+
+// switchTab shows a tab and loads its data.
+func (m Model) switchTab(t tab) (Model, tea.Cmd) {
+	m.tab = t
+	if t == tabUpdates {
+		return m, loadUpdates(false)
+	}
+	return m, nil
+}
+
+// updatesKey handles the keys that act on the Updates tab. ok is false for
+// keys it does not own (tab switching, scope, help and quit stay global).
+func (m Model) updatesKey(msg tea.KeyPressMsg) (Model, tea.Cmd, bool) {
+	k := newUpdateKeys()
+	m.status, m.statusErr = "", false
+	switch {
+	case key.Matches(msg, k.Check):
+		m, tick := m.startBusy("updates.checking")
+		return m, tea.Batch(loadUpdates(true), tick), true
+	case key.Matches(msg, k.Full):
+		if it := m.updates.selected(); it != nil && it.Check.Err == nil {
+			return m, loadFullDiff(it.Check), true
+		}
+		return m, nil, true
+	case key.Matches(msg, k.Update):
+		return m.confirmUpdate(), nil, true
+	case key.Matches(msg, k.Up), key.Matches(msg, k.Down), key.Matches(msg, k.Mark):
+		var cmd tea.Cmd
+		m.updates, cmd = m.updates.Update(msg)
+		return m, cmd, true
+	}
+	return m, nil, false
+}
+
+// confirmUpdate asks before updating the checked repos (or the selected one).
+func (m Model) confirmUpdate() Model {
+	checks := m.updates.toUpdate()
+	if len(checks) == 0 {
+		return m
+	}
+	var body []string
+	for _, c := range checks {
+		body = append(body, m.st.Bold.Render(c.Repo)+"  "+m.st.Dim.Render(i18n.T("updates.commits", c.Commits)))
+		if n := names(c.Changes); n != "" {
+			body = append(body, "  "+n)
+		}
+	}
+	return m.openDialog(modalState{
+		title: i18n.T("updates.confirm.title"), body: body, okKey: "updates.ok",
+		onOK: func(m Model, _ string) (Model, tea.Cmd) {
+			m, tick := m.startBusy("updates.updating")
+			return m, tea.Batch(updateCmd(checks), tick)
+		},
+	})
+}
 
 // keys returns the key bindings for the footer.
 func (m Model) keys() keyMap {
 	if m.tab == tabSkills {
 		return newKeyMap(m.skills.helpGroups(), m.skills.shortHelp())
+	}
+	if m.tab == tabUpdates {
+		return newKeyMap(m.updates.helpGroups(), m.updates.shortHelp())
 	}
 	return newKeyMap(nil, nil)
 }
@@ -315,7 +419,7 @@ func (m Model) body() string {
 	var msg string
 	switch m.tab {
 	case tabUpdates:
-		msg = i18n.T("updates.soon")
+		return m.updates.View(m.st)
 	case tabRepos:
 		msg = i18n.T("repos.soon")
 	case tabDoctor:
@@ -330,7 +434,7 @@ func (m Model) body() string {
 func (m Model) footer() string {
 	status := ""
 	if m.applying {
-		status = m.spin.View() + " " + m.st.Accent.Render(i18n.T("apply.applying"))
+		status = m.spin.View() + " " + m.st.Accent.Render(i18n.T(m.busyKey))
 	} else if sum := m.skills.summary(); m.status == "" && m.tab == tabSkills && sum != "" {
 		status = m.st.Pending.Render(sum)
 	} else if m.status != "" {
@@ -383,6 +487,31 @@ func applySummary(done []applied, err error) (string, bool) {
 	}
 	if len(parts) == 0 {
 		return i18n.T("apply.nothing"), false
+	}
+	return strings.Join(parts, " · "), false
+}
+
+// updateSummary is the status line after an update: the repos updated, the
+// restart hint when it applies, or the error that stopped it.
+func updateSummary(done []updatedRepo, err error) (string, bool) {
+	var parts []string
+	restart := false
+	for _, d := range done {
+		parts = append(parts, i18n.T("updates.done", shortRepo(d.Repo)))
+		restart = restart || restartNeeded(d.Serves)
+	}
+	if err != nil {
+		msg := i18n.T("apply.failed", err)
+		if errors.Is(err, state.ErrLocked) {
+			msg = errText(err)
+		}
+		return strings.Join(append(parts, msg), " · "), true
+	}
+	if len(parts) == 0 {
+		return i18n.T("apply.nothing"), false
+	}
+	if restart {
+		parts = append(parts, i18n.T("updates.restart"))
 	}
 	return strings.Join(parts, " · "), false
 }

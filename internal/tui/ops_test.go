@@ -13,6 +13,7 @@ import (
 )
 
 type realStore struct {
+	up    string // the local upstream repo
 	proj  agents.Scope
 	pdf   string // skill ids
 	docx  string
@@ -72,7 +73,7 @@ func newRealStore(t *testing.T) *realStore {
 		t.Fatal(err)
 	}
 	return &realStore{
-		proj: agents.Scope{Dir: proj}, pdf: repo + ":skills/pdf", docx: repo + ":skills/docx",
+		up: up, proj: agents.Scope{Dir: proj}, pdf: repo + ":skills/pdf", docx: repo + ":skills/docx",
 		links: filepath.Join(proj, ".claude", "skills"),
 	}
 }
