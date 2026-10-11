@@ -28,14 +28,15 @@ type modalState struct {
 
 	// Generic dialogs (updates, repositories, doctor, pin, alias) set these
 	// instead of the skill-change fields above.
-	generic  bool
-	title    string
-	body     []string // content, already styled
-	okKey    string   // i18n key of the primary button; modal.apply when empty
-	disabled bool     // the primary button cannot be pressed
-	prompt   string   // label of the text input, when there is one
-	input    textinput.Model
-	hasInput bool
+	generic    bool
+	title      string
+	body       []string // content, already styled
+	okKey      string   // i18n key of the primary button; modal.apply when empty
+	disabled   bool     // the primary button cannot be pressed
+	prompt     string   // label of the text input, when there is one
+	input      textinput.Model
+	hasInput   bool
+	allowEmpty bool // an empty input may be confirmed
 	// onOK runs when the primary button is pressed; input is the typed text.
 	onOK func(m Model, input string) (Model, tea.Cmd)
 }
@@ -65,7 +66,7 @@ func (s modalState) blocked() bool {
 // canApply is true when Apply may be pressed.
 func (s modalState) canApply() bool {
 	if s.generic {
-		return !s.disabled
+		return !s.disabled && (!s.hasInput || s.allowEmpty || strings.TrimSpace(s.input.Value()) != "")
 	}
 	return !s.loading && !s.blocked() && len(s.plans) > 0
 }

@@ -739,3 +739,14 @@ func (m skillsModel) changes() []change {
 		return id
 	})
 }
+
+// setQuery sets the search text, as if typed.
+func (m *skillsModel) setQuery(q string) {
+	m.query = q
+	m.search.SetValue(q)
+	m.editing = false
+	m.search.Blur()
+	if m.loaded {
+		m.rebuild()
+	}
+}

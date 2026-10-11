@@ -166,6 +166,8 @@ type updatesModel struct {
 	full   bool // the full-diff viewer is open
 	vp     viewport.Model
 	fullOf string
+
+	wantSelect string // repo to select when the items arrive
 }
 
 func newUpdatesModel() updatesModel {
@@ -184,6 +186,9 @@ func (m *updatesModel) setItems(items []updateItem) {
 	var prev string
 	if it := m.selected(); it != nil {
 		prev = it.Check.Repo
+	}
+	if m.wantSelect != "" {
+		prev, m.wantSelect = m.wantSelect, ""
 	}
 	m.items, m.loaded = items, true
 	m.cursor = 0

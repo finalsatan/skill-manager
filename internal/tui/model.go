@@ -14,6 +14,7 @@ import (
 	"charm.land/bubbles/v2/help"
 	"charm.land/bubbles/v2/key"
 	"charm.land/bubbles/v2/spinner"
+	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
@@ -85,6 +86,7 @@ type Model struct {
 
 	skills  skillsModel
 	updates updatesModel
+	repos   reposModel
 
 	modal    modalState
 	applying bool   // an operation is running in a command; input is ignored meanwhile
@@ -95,7 +97,7 @@ type Model struct {
 }
 
 func New(opts Options) Model {
-	m := Model{opts: opts, isDark: true, help: help.New(), skills: newSkillsModel(), updates: newUpdatesModel(), spin: spinner.New(spinner.WithSpinner(spinner.Dot))}
+	m := Model{opts: opts, isDark: true, help: help.New(), skills: newSkillsModel(), updates: newUpdatesModel(), repos: newReposModel(), spin: spinner.New(spinner.WithSpinner(spinner.Dot))}
 	m.restyle()
 	return m
 }
@@ -120,6 +122,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// room left for the tab.
 	m.skills.setSize(m.bodySize())
 	m.updates.setSize(m.bodySize())
+	m.repos.setSize(m.bodySize())
 	return m, cmd
 }
 
@@ -190,6 +193,33 @@ func (m Model) update(msg tea.Msg) (Model, tea.Cmd) {
 		m.applying = false
 		m.status, m.statusErr = updateSummary(msg.done, msg.err)
 		return m, tea.Batch(loadCounts(), loadUpdates(false), m.loadSkills())
+	case reposMsg:
+		if msg.err != nil {
+			m.setError(msg.err)
+			break
+		}
+		m.repos.setRows(msg.rows)
+		return m, m.repos.wantInfo()
+	case repoInfoMsg:
+		m.repos.infos[msg.id] = msg
+	case addRepoMsg:
+		m.applying = false
+		if msg.err != nil {
+			m.status, m.statusErr = i18n.T("apply.failed", msg.err), true
+			break
+		}
+		m.status, m.statusErr = i18n.T("repos.added", shortRepo(msg.plan.ID), msg.skills, shortPath(msg.plan.Dir, agents.Scope{Global: true})), false
+		return m, tea.Batch(loadRepos(), loadCounts(), m.loadSkills())
+	case removePlanMsg:
+		return m.openRemoveDialog(msg), nil
+	case removeDoneMsg:
+		m.applying = false
+		if msg.err != nil {
+			m.status, m.statusErr = i18n.T("apply.failed", msg.err), true
+		} else {
+			m.status, m.statusErr = i18n.T("repos.removed", shortRepo(msg.id), len(msg.removed)), false
+		}
+		return m, tea.Batch(loadRepos(), loadCounts(), m.loadSkills(), loadUpdates(false))
 	case spinner.TickMsg:
 		if m.applying {
 			var cmd tea.Cmd
@@ -241,6 +271,11 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 			return m2, cmd
 		}
 	}
+	if m.tab == tabRepos {
+		if m2, cmd, ok := m.reposKey(msg); ok {
+			return m2, cmd
+		}
+	}
 	switch {
 	case key.Matches(msg, k.Help):
 		m.help.ShowAll = !m.help.ShowAll
@@ -252,7 +287,11 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 		return m, m.loadSkills()
 	case key.Matches(msg, k.Refresh):
 		m.status = ""
-		return m, tea.Batch(loadCounts(), m.loadSkills())
+		cmds := []tea.Cmd{loadCounts(), m.loadSkills()}
+		if m.tab == tabRepos {
+			cmds = append(cmds, loadRepos())
+		}
+		return m, tea.Batch(cmds...)
 	}
 	switch msg.String() {
 	case "1", "2", "3", "4":
@@ -286,10 +325,106 @@ func (m Model) capturing() bool {
 // switchTab shows a tab and loads its data.
 func (m Model) switchTab(t tab) (Model, tea.Cmd) {
 	m.tab = t
-	if t == tabUpdates {
+	switch t {
+	case tabUpdates:
 		return m, loadUpdates(false)
+	case tabRepos:
+		return m, loadRepos()
 	}
 	return m, nil
+}
+
+// reposKey handles the keys that act on the Repos tab.
+func (m Model) reposKey(msg tea.KeyPressMsg) (Model, tea.Cmd, bool) {
+	k := newRepoKeys()
+	m.status, m.statusErr = "", false
+	row := m.repos.selected()
+	switch {
+	case key.Matches(msg, k.Add):
+		return m.openAddDialog()
+	case key.Matches(msg, k.Remove):
+		if row == nil {
+			return m, nil, true
+		}
+		return m, removePlanCmd(row.ID), true
+	case key.Matches(msg, k.Skills):
+		if row != nil {
+			m.skills.setQuery(row.ID)
+			m.tab = tabSkills
+		}
+		return m, nil, true
+	case key.Matches(msg, k.Updates):
+		if row == nil {
+			return m, nil, true
+		}
+		if row.Behind <= 0 {
+			m.status = i18n.T("repos.noupdates")
+			return m, nil, true
+		}
+		m.updates.wantSelect = row.ID
+		m2, cmd := m.switchTab(tabUpdates)
+		return m2, cmd, true
+	case key.Matches(msg, k.Up), key.Matches(msg, k.Down), key.Matches(msg, k.PgUp), key.Matches(msg, k.PgDown):
+		var cmd tea.Cmd
+		m.repos, cmd = m.repos.Update(msg)
+		return m, cmd, true
+	}
+	return m, nil, false
+}
+
+// openAddDialog asks for a repository reference.
+func (m Model) openAddDialog() (Model, tea.Cmd, bool) {
+	ti := textinput.New()
+	ti.Prompt = ""
+	ti.SetWidth(48)
+	focus := ti.Focus()
+	m = m.openDialog(modalState{
+		title: i18n.T("repos.add.title"), prompt: i18n.T("repos.add.prompt"), input: ti, hasInput: true,
+		body: []string{m.st.Dim.Render(i18n.T("repos.add.hint"))}, okKey: "repos.add.ok",
+		onOK: func(m Model, ref string) (Model, tea.Cmd) {
+			m, tick := m.startBusy("repos.adding")
+			return m, tea.Batch(addRepoCmd(ref), tick)
+		},
+	})
+	return m, focus, true
+}
+
+// openRemoveDialog shows what removing a repo deletes, or why it is refused.
+func (m Model) openRemoveDialog(msg removePlanMsg) Model {
+	id := msg.plan.Repo
+	d := modalState{title: i18n.T("repos.remove.title", shortRepo(id)), okKey: "repos.remove.ok", button: btnBack}
+	switch {
+	case msg.open != nil:
+		d.body, d.disabled = []string{m.st.Danger.Render("✗ " + errText(msg.open))}, true
+	default:
+		if len(msg.plan.Links) > 0 {
+			d.body = append(d.body, m.st.Bold.Render(i18n.T("repos.remove.links")))
+			for _, l := range msg.plan.Links {
+				d.body = append(d.body, "  "+m.st.Pending.Render("− "+shortPath(l, agents.Scope{Global: true})))
+			}
+		}
+		if len(msg.plan.Pins) > 0 {
+			d.body = append(d.body, m.st.Bold.Render(i18n.T("repos.remove.pins")))
+			for _, p := range msg.plan.Pins {
+				d.body = append(d.body, "  "+m.st.Pending.Render("− "+shortPath(p, agents.Scope{Global: true})))
+			}
+		}
+		if len(d.body) == 0 {
+			d.body = []string{m.st.Dim.Render(i18n.T("repos.remove.none"))}
+		}
+		if msg.err != nil {
+			d.disabled = true
+			d.body = append(d.body, "", m.st.Danger.Render("✗ "+i18n.T("repos.remove.refused")))
+			for _, l := range strings.Split(msg.err.Error(), "\n") {
+				d.body = append(d.body, "  "+m.st.Danger.Render(l))
+			}
+		}
+	}
+	d.onOK = func(m Model, _ string) (Model, tea.Cmd) {
+		m, tick := m.startBusy("repos.removing")
+		return m, tea.Batch(removeRepoCmd(id), tick)
+	}
+	return m.openDialog(d)
 }
 
 // updatesKey handles the keys that act on the Updates tab. ok is false for
@@ -343,8 +478,11 @@ func (m Model) keys() keyMap {
 	if m.tab == tabSkills {
 		return newKeyMap(m.skills.helpGroups(), m.skills.shortHelp())
 	}
-	if m.tab == tabUpdates {
+	switch m.tab {
+	case tabUpdates:
 		return newKeyMap(m.updates.helpGroups(), m.updates.shortHelp())
+	case tabRepos:
+		return newKeyMap(m.repos.helpGroups(), m.repos.shortHelp())
 	}
 	return newKeyMap(nil, nil)
 }
@@ -421,7 +559,7 @@ func (m Model) body() string {
 	case tabUpdates:
 		return m.updates.View(m.st)
 	case tabRepos:
-		msg = i18n.T("repos.soon")
+		return m.repos.View(m.st)
 	case tabDoctor:
 		msg = i18n.T("doctor.soon")
 	default:
