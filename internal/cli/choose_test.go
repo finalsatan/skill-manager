@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -247,7 +248,11 @@ func TestOptionBuilders(t *testing.T) {
 
 func TestDefaultAgents(t *testing.T) {
 	bin := t.TempDir()
-	if err := os.WriteFile(filepath.Join(bin, "fakeagent"), []byte("#!/bin/sh\n"), 0o755); err != nil {
+	file := "fakeagent"
+	if runtime.GOOS == "windows" {
+		file += ".exe" // LookPath only finds PATHEXT extensions there
+	}
+	if err := os.WriteFile(filepath.Join(bin, file), []byte("#!/bin/sh\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", bin)

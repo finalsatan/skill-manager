@@ -77,7 +77,7 @@ func TestSaveWritesPinnedAndUnpinnedSkills(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	up := e.up
+	up := strings.ReplaceAll(e.up, `\`, `\\`) // TOML escapes Windows backslashes
 	want := "# Managed by skillet. Restore with `skillet restore`.\n\n" +
 		"[[repo]]\nid = \"local/up\"\nurl = \"" + up + "\"\nbranch = \"main\"\n\n" +
 		"[[skill]]\nid = \"local/up:skills/pdf\"\nagents = [\"claude\", \"codex\"]\npin = \"" + v1 + "\"\n\n" +
