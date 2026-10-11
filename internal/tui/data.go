@@ -2,10 +2,10 @@ package tui
 
 import (
 	"errors"
-	"skillet/internal/agents"
 
 	tea "charm.land/bubbletea/v2"
 
+	"skillet/internal/agents"
 	"skillet/internal/deploy"
 	"skillet/internal/i18n"
 	"skillet/internal/state"

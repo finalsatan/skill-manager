@@ -5,6 +5,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"skillet/internal/config"
 	"skillet/internal/deploy"
 	"skillet/internal/tui"
 )
@@ -18,10 +19,16 @@ func newTUICmd() *cobra.Command {
 			if !canPrompt(cmd) {
 				return errors.New("the TUI needs a terminal and input enabled (see --no-input, SKILLET_NO_INPUT, CI)")
 			}
-			return runTUI()
+			if _, err := config.Load(); err != nil {
+				return err // for an uninitialized store: "run `skillet init` first"
+			}
+			return startTUI()
 		},
 	}
 }
+
+// startTUI launches the TUI; tests replace it.
+var startTUI = runTUI
 
 func runTUI() error {
 	// The project scope is the git root of the working directory, as for the

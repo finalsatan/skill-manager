@@ -11,6 +11,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"skillet/internal/config"
 	"skillet/internal/deploy"
 )
 
@@ -29,7 +30,14 @@ func NewRoot() *cobra.Command {
 			if !canPrompt(cmd) {
 				return cmd.Help()
 			}
-			return runTUI()
+			if _, err := config.Load(); errors.Is(err, config.ErrNotInitialized) {
+				if err := cmd.Help(); err != nil {
+					return err
+				}
+				fmt.Fprintln(cmd.OutOrStdout(), "\nskillet is not initialized yet; run `skillet init` to get started.")
+				return nil
+			}
+			return startTUI()
 		},
 	}
 	root.PersistentFlags().Bool("no-input", false, "never prompt; fail instead (also SKILLET_NO_INPUT=1 or CI)")
