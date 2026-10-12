@@ -351,9 +351,9 @@ func TestGroupDetailPane(t *testing.T) {
 
 func TestFooterOffersViewKey(t *testing.T) {
 	m := groupedAt(t, i18n.EN)
-	m = send(t, m, tea_size(140, 30))
-	if v := plain(m.View()); !strings.Contains(v, "v view") || !strings.Contains(v, "q quit") {
-		t.Errorf("wide footer:\n%s", v)
+	m = send(t, m, tea_size(140, 30), press("j")) // on a skill row
+	if v := plain(m.View()); !strings.Contains(v, "space toggle") || !strings.Contains(v, "v view") || !strings.Contains(v, "q quit") {
+		t.Errorf("wide footer on a row:\n%s", v)
 	}
 	m = send(t, m, tea_size(100, 30))
 	v := plain(m.View())
@@ -364,5 +364,73 @@ func TestFooterOffersViewKey(t *testing.T) {
 	v = plain(m.View())
 	if !strings.Contains(v, "v") || !strings.Contains(v, "fold all") {
 		t.Errorf("full help lacks v/z:\n%s", v)
+	}
+}
+
+func TestFooterOnGroupHeader(t *testing.T) {
+	m := groupedAt(t, i18n.EN)
+	m = send(t, m, tea_size(140, 30))
+	v := plain(m.View())
+	for _, w := range []string{"space/enter fold/unfold", "z fold all", "v flat", "q quit", "? help"} {
+		if !strings.Contains(v, w) {
+			t.Errorf("header footer lacks %q:\n%s", w, v)
+		}
+	}
+	for _, w := range []string{"space toggle", "enter review", "←/→"} {
+		if strings.Contains(v, w) {
+			t.Errorf("header footer still has %q", w)
+		}
+	}
+	m = send(t, m, tea_size(80, 30))
+	if v := plain(m.View()); !strings.Contains(v, "q quit") || !strings.Contains(v, "? help") {
+		t.Errorf("narrow header footer lost quit/help:\n%s", v)
+	}
+	zh := groupedAt(t, i18n.ZH)
+	zh = send(t, zh, tea_size(140, 30))
+	if v := plain(zh.View()); !strings.Contains(v, "space/enter 折叠/展开") || !strings.Contains(v, "z 全部折叠") || !strings.Contains(v, "v 平铺") {
+		t.Errorf("zh header footer:\n%s", v)
+	}
+	// Back on a row the usual footer returns.
+	zh = send(t, zh, press("j"))
+	if v := plain(zh.View()); !strings.Contains(v, "space 切换") || !strings.Contains(v, "enter 预览") {
+		t.Errorf("zh row footer:\n%s", v)
+	}
+}
+
+func TestGroupedHidesRepoColumn(t *testing.T) {
+	m := groupedAt(t, i18n.EN)
+	v := plain(m.View())
+	head := strings.Split(v, "\n")[2]
+	if strings.Contains(head, "REPO") || !strings.Contains(head, "STATUS") {
+		t.Errorf("grouped column titles: %q", head)
+	}
+	for _, l := range strings.Split(v, "\n") {
+		if strings.HasPrefix(strings.TrimSpace(l), "a1") && strings.Contains(l, "acme/alpha") {
+			t.Errorf("row repeats the repo: %q", l)
+		}
+	}
+	// Flat view and the all-scopes view keep it.
+	flat := send(t, m, press("v"))
+	if h := strings.Split(plain(flat.View()), "\n")[2]; !strings.Contains(h, "REPO") {
+		t.Errorf("flat titles: %q", h)
+	}
+	all := send(t, m, press("s"), press("s"), skillsMsg{kind: scopeAll, data: testData()})
+	if h := strings.Split(plain(all.View()), "\n")[2]; !strings.Contains(h, "REPO") {
+		t.Errorf("all-scopes titles: %q", h)
+	}
+	// The status takes the width: a long status is not cut at the old column.
+	if !strings.Contains(v, "pinned ffff") {
+		t.Errorf("status missing:\n%s", v)
+	}
+}
+
+func TestGroupHeaderSpacing(t *testing.T) {
+	en := plain(groupedAt(t, i18n.EN).View())
+	if !strings.Contains(en, "acme/alpha (2 skills · 1 enabled)") {
+		t.Errorf("en header:\n%s", en)
+	}
+	zh := plain(groupedAt(t, i18n.ZH).View())
+	if !strings.Contains(zh, "acme/alpha（2 个 · 已启用 1）") || strings.Contains(zh, "alpha （") {
+		t.Errorf("zh header:\n%s", zh)
 	}
 }

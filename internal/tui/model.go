@@ -572,16 +572,7 @@ func (m Model) keys() keyMap {
 	k := newKeyMap(nil, nil)
 	switch m.tab {
 	case tabSkills:
-		short := m.skills.shortHelp()
-		k = newKeyMap(m.skills.helpGroups(), short)
-		// Offer the view toggle in the one-line footer only if it still fits.
-		if !m.skills.editing {
-			with := newKeyMap(m.skills.helpGroups(), append(append([]key.Binding(nil), short...), newSkillKeys().View))
-			with.scoped = true
-			if m.width == 0 || lipgloss.Width(m.help.ShortHelpView(with.ShortHelp())) <= m.width {
-				k = with
-			}
-		}
+		k = m.skillsKeys()
 	case tabUpdates:
 		k = newKeyMap(m.updates.helpGroups(), m.updates.shortHelp())
 	case tabRepos:
@@ -591,6 +582,39 @@ func (m Model) keys() keyMap {
 	}
 	k.scoped = m.tab == tabSkills
 	return k
+}
+
+// skillsKeys picks the Skills tab's bindings for the one-line footer: as many
+// of its own keys (and the view toggle) as fit before the global ones, so that
+// tabs, help and quit are never cut off.
+func (m Model) skillsKeys() keyMap {
+	groups := m.skills.helpGroups()
+	if m.skills.editing {
+		return newKeyMap(groups, m.skills.shortHelp())
+	}
+	cands := append(m.skills.shortHelp(), m.viewKey())
+	// Measure without the help bubble's own width limit, which would cut the tail.
+	free := m.help
+	free.SetWidth(0)
+	for n := len(cands); n > 0; n-- {
+		k := newKeyMap(groups, cands[:n])
+		k.scoped = true
+		if m.width == 0 || lipgloss.Width(free.ShortHelpView(k.ShortHelp())) <= m.width {
+			return k
+		}
+	}
+	k := newKeyMap(groups, cands[:1])
+	k.scoped = true
+	return k
+}
+
+// viewKey is the view toggle as the one-line footer words it: on a group
+// header it names the flat view it switches to.
+func (m Model) viewKey() key.Binding {
+	if m.skills.onHeader() {
+		return newSkillKeys().Flat
+	}
+	return newSkillKeys().View
 }
 
 // bodySize is the room the active tab gets between the header and footer.

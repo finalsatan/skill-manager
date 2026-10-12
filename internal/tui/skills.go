@@ -414,7 +414,7 @@ type skillKeys struct {
 	Up, Down, PgUp, PgDown, Top, Bottom, Filter, Search key.Binding
 	Confirm, Clear                                      key.Binding
 	Left, Right, Toggle, ToggleRow, Review              key.Binding
-	Pin, Alias, View, FoldAll                           key.Binding
+	Pin, Alias, View, FoldAll, Fold, Flat               key.Binding
 }
 
 func newSkillKeys() skillKeys {
@@ -434,6 +434,8 @@ func newSkillKeys() skillKeys {
 		Pin:       key.NewBinding(key.WithKeys("p"), key.WithHelp("p", i18n.T("help.pin"))),
 		Alias:     key.NewBinding(key.WithKeys("R"), key.WithHelp("R", i18n.T("help.alias"))),
 		View:      key.NewBinding(key.WithKeys("v"), key.WithHelp("v", i18n.T("help.view"))),
+		Fold:      key.NewBinding(key.WithKeys("space"), key.WithHelp("space/enter", i18n.T("help.fold"))),
+		Flat:      key.NewBinding(key.WithKeys("v"), key.WithHelp("v", i18n.T("help.flat"))),
 		FoldAll:   key.NewBinding(key.WithKeys("z"), key.WithHelp("z", i18n.T("help.foldall"))),
 		Review:    key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", i18n.T("help.review"))),
 		Confirm:   key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", i18n.T("help.confirm"))),
@@ -455,6 +457,9 @@ func (m skillsModel) shortHelp() []key.Binding {
 	k := newSkillKeys()
 	if m.editing {
 		return []key.Binding{k.Confirm, k.Clear}
+	}
+	if m.onHeader() {
+		return []key.Binding{k.Up, k.Fold, k.FoldAll}
 	}
 	return []key.Binding{k.Up, k.Left, k.Toggle, k.Review, k.Search}
 }
@@ -639,6 +644,12 @@ func (m skillsModel) columns() columns {
 	c.name = min(nameW, rest*35/100)
 	c.repo = min(repoW, rest*30/100)
 	c.name, c.repo = max(c.name, 8), max(c.repo, 6)
+	if m.grouped() {
+		// The group header already says which repo; its width goes to the status.
+		c.repo = 0
+		c.status = max(rest+6-c.name-2, 8)
+		return c
+	}
 	c.status = max(rest-c.name-c.repo, 8)
 	return c
 }
@@ -742,7 +753,11 @@ func (m skillsModel) renderRow(r *row, sel bool, c columns, st styles) string {
 		}
 		seg(centerIn(g, c.agent[i]), style)
 	}
-	seg(" "+padTo(shortRepo(r.Repo), c.repo)+"  ", st.Dim)
+	if m.grouped() {
+		seg("  ", plainStyle)
+	} else {
+		seg(" "+padTo(shortRepo(r.Repo), c.repo)+"  ", st.Dim)
+	}
 	// Status parts are styled one by one, so truncate by cells first.
 	room := c.status
 	for i, p := range statusParts(r) {
@@ -783,7 +798,11 @@ func (m skillsModel) View(st styles) string {
 	for i, a := range m.data.Agents {
 		head += centerIn(a.ID, c.agent[i])
 	}
-	head += " " + padTo(i18n.T("col.repo"), c.repo) + "  " + i18n.T("col.status")
+	if m.grouped() {
+		head += "  " + i18n.T("col.status")
+	} else {
+		head += " " + padTo(i18n.T("col.repo"), c.repo) + "  " + i18n.T("col.status")
+	}
 	lines = append(lines, st.Dim.Render(ansi.Truncate(head, m.w, "")))
 
 	list := m.listLines(c, st)
@@ -869,7 +888,8 @@ func (m skillsModel) renderGroup(g *groupHeader, sel bool, st styles) string {
 		extra = append(extra, "↑")
 	}
 	// Budget the cells: the title gives way first, the counts and markers stay.
-	tail := " " + counts
+	sep := i18n.T("group.sep")
+	tail := sep + counts
 	for _, e := range extra {
 		tail += " " + e
 	}
@@ -879,7 +899,7 @@ func (m skillsModel) renderGroup(g *groupHeader, sel bool, st styles) string {
 		line := "  " + title + tail
 		return st.Cursor.Render(padTo(line, m.w))
 	}
-	line := "  " + st.Bold.Render(title) + st.Dim.Render(" "+counts)
+	line := "  " + st.Bold.Render(title) + st.Dim.Render(sep+counts)
 	if g.pending > 0 {
 		line += " " + st.Pending.Render(i18n.T("group.pending", g.pending))
 	}

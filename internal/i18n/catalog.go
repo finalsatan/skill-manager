@@ -218,6 +218,7 @@ var en = map[string]string{
 	"doctor.tag.manual":  "[manual]",
 
 	"group.unmanaged": "Unmanaged",
+	"group.sep":       " ",
 	"group.counts":    "(%d skills · %d enabled)",
 	"group.counts.f":  "(%d/%d skills · %d enabled)",
 	"group.pending":   "%d pending",
@@ -228,6 +229,9 @@ var en = map[string]string{
 	"view.allflat":    "The all-scopes view stays flat.",
 	"help.view":       "view",
 	"help.foldall":    "fold all",
+
+	"help.fold": "fold/unfold",
+	"help.flat": "flat",
 }
 
 var zh = map[string]string{
@@ -446,6 +450,7 @@ var zh = map[string]string{
 	"doctor.tag.manual":  "[需手动]",
 
 	"group.unmanaged": "未托管",
+	"group.sep":       "",
 	"group.counts":    "（%d 个 · 已启用 %d）",
 	"group.counts.f":  "（%d/%d 个 · 已启用 %d）",
 	"group.pending":   "%d 项待应用",
@@ -456,4 +461,7 @@ var zh = map[string]string{
 	"view.allflat":    "「全部」视图保持平铺。",
 	"help.view":       "视图",
 	"help.foldall":    "全部折叠",
+
+	"help.fold": "折叠/展开",
+	"help.flat": "平铺",
 }
