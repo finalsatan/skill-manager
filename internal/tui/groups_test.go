@@ -37,9 +37,21 @@ func groupData() skillsData {
 	return skillsData{Agents: testAgents(), Sections: []section{{Scope: agents.Scope{Dir: proj}, Rows: rows}}}
 }
 
-func groupedAt(t *testing.T, l i18n.Lang) Model {
+// freshGrouped is the grouped view as a user first sees it: every group collapsed.
+func freshGrouped(t *testing.T, l i18n.Lang) Model {
 	m := newTestModel(t, l)
 	return send(t, m, skillsMsg{kind: scopeProject, data: groupData()})
+}
+
+// groupedAt is the same data with alpha, zzz/deleted and Unmanaged unfolded,
+// which most tests want to look at.
+func groupedAt(t *testing.T, l i18n.Lang) Model {
+	m := freshGrouped(t, l)
+	for _, k := range []string{"github.com/acme/alpha", "github.com/zzz/deleted", unmanagedKey} {
+		m.skills.fold[scopeProject][k] = true
+	}
+	m.skills.rebuild()
+	return m
 }
 
 // layoutOf lists the items as "▾key" / "▸key" for headers and "  name" for rows.
@@ -74,7 +86,25 @@ func cursorOn(m Model) string {
 	return ""
 }
 
-func TestGroupedLayoutAndInitialFold(t *testing.T) {
+func TestEveryGroupStartsCollapsed(t *testing.T) {
+	m := freshGrouped(t, i18n.EN)
+	want := []string{"▸acme/alpha", "▸acme/beta", "▸me/gamma", "▸zzz/deleted", "▸Unmanaged"}
+	if got := layoutOf(m); !reflect.DeepEqual(got, want) {
+		t.Fatalf("first view: %v", got)
+	}
+	// Enabled skills or pending changes make no difference to the start state.
+	for k, open := range m.skills.fold[scopeProject] {
+		if open {
+			t.Errorf("%q starts open", k)
+		}
+	}
+	// Counts are still on the headers, so nothing is hidden from sight.
+	if v := plain(m.View()); !strings.Contains(v, "(2 skills · 1 enabled)") || !strings.Contains(v, "▸ me/gamma") {
+		t.Errorf("view:\n%s", v)
+	}
+}
+
+func TestGroupedLayout(t *testing.T) {
 	m := groupedAt(t, i18n.EN)
 	// Repo id order, unmanaged last; groups with something enabled start open,
 	// a repo gone from the store sits under its own id.
@@ -255,7 +285,7 @@ func TestFoldStateSurvivesReloadAndNewReposFollowTheRule(t *testing.T) {
 		t.Fatalf("beta not open: %v", got)
 	}
 	m = send(t, m, press("k"), press("k"), press("k"), press("space")) // fold alpha
-	// Reload with the same data and an extra repo that has an enabled skill.
+	// Reload with the same data and an extra repo, even one with an enabled skill.
 	d := groupData()
 	extra := buildRows(buildInput{Scope: agents.Scope{Dir: proj}, Agents: testAgents(),
 		Skills:     append(groupSkills(), skillInfo{ID: "github.com/new/repo:skills/n1", Name: "n1", Repo: "github.com/new/repo", RelPath: "skills/n1"}),
@@ -269,10 +299,10 @@ func TestFoldStateSurvivesReloadAndNewReposFollowTheRule(t *testing.T) {
 	}
 	found := false
 	for _, l := range got {
-		found = found || l == "▾new/repo"
+		found = found || l == "▸new/repo"
 	}
 	if !found {
-		t.Errorf("new repo with an enabled skill should start open: %v", got)
+		t.Errorf("a new repo should start collapsed: %v", got)
 	}
 	// It also survives the view toggle.
 	m = send(t, m, press("v"), press("v"))

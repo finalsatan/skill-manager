@@ -97,18 +97,18 @@ func (m skillsModel) capturing() bool { return m.editing }
 func (m *skillsModel) setData(d skillsData, kind scopeKind) {
 	m.data, m.kind, m.all, m.loaded = d, kind, kind == scopeAll, true
 	m.col = min(m.col, max(len(d.Agents)-1, 0))
-	// Groups seen for the first time start expanded when something in them is
-	// enabled or about to be; known groups keep their fold state.
+	// Groups seen for the first time start collapsed; known groups keep their
+	// fold state.
 	if !m.all {
 		if m.fold[kind] == nil {
 			m.fold[kind] = map[string]bool{}
 		}
 		live := map[string]bool{}
 		for _, sec := range d.Sections {
-			for key, g := range m.groupStats(sec.Rows) {
+			for key := range m.groupStats(sec.Rows) {
 				live[key] = true
 				if _, ok := m.fold[kind][key]; !ok {
-					m.fold[kind][key] = g.enabled > 0 || g.pending > 0
+					m.fold[kind][key] = false
 				}
 			}
 		}
