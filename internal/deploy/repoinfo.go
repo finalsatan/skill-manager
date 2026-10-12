@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"skillet/internal/skill"
-	"skillet/internal/state"
+	"github.com/finalsatan/skill-manager/internal/skill"
+	"github.com/finalsatan/skill-manager/internal/state"
 )
 
 // RepoUse is one place a skill is linked or copied to.

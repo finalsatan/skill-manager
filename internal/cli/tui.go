@@ -5,9 +5,9 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"skillet/internal/config"
-	"skillet/internal/deploy"
-	"skillet/internal/tui"
+	"github.com/finalsatan/skill-manager/internal/config"
+	"github.com/finalsatan/skill-manager/internal/deploy"
+	"github.com/finalsatan/skill-manager/internal/tui"
 )
 
 func newTUICmd() *cobra.Command {

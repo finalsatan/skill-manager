@@ -7,9 +7,9 @@ import (
 	"strings"
 	"testing"
 
-	"skillet/internal/agents"
-	"skillet/internal/config"
-	"skillet/internal/deploy"
+	"github.com/finalsatan/skill-manager/internal/agents"
+	"github.com/finalsatan/skill-manager/internal/config"
+	"github.com/finalsatan/skill-manager/internal/deploy"
 )
 
 type realStore struct {

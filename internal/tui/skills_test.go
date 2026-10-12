@@ -7,8 +7,8 @@ import (
 
 	"charm.land/lipgloss/v2"
 
-	"skillet/internal/agents"
-	"skillet/internal/i18n"
+	"github.com/finalsatan/skill-manager/internal/agents"
+	"github.com/finalsatan/skill-manager/internal/i18n"
 )
 
 func testData() skillsData {

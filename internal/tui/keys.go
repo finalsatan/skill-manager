@@ -3,7 +3,7 @@ package tui
 import (
 	"charm.land/bubbles/v2/key"
 
-	"skillet/internal/i18n"
+	"github.com/finalsatan/skill-manager/internal/i18n"
 )
 
 // keyMap is the global key bindings, plus the bindings of the active tab.

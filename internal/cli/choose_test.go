@@ -10,9 +10,9 @@ import (
 	"strings"
 	"testing"
 
-	"skillet/internal/agents"
-	"skillet/internal/deploy"
-	"skillet/internal/state"
+	"github.com/finalsatan/skill-manager/internal/agents"
+	"github.com/finalsatan/skill-manager/internal/deploy"
+	"github.com/finalsatan/skill-manager/internal/state"
 )
 
 type fakeChooser struct {

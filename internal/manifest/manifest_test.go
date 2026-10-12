@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"skillet/internal/state"
+	"github.com/finalsatan/skill-manager/internal/state"
 )
 
 func TestBuildSaveLoadRoundTrip(t *testing.T) {

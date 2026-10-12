@@ -10,9 +10,9 @@ import (
 	"sort"
 	"strings"
 
-	"skillet/internal/gitx"
-	"skillet/internal/skill"
-	"skillet/internal/state"
+	"github.com/finalsatan/skill-manager/internal/gitx"
+	"github.com/finalsatan/skill-manager/internal/skill"
+	"github.com/finalsatan/skill-manager/internal/state"
 )
 
 // pinShort is the length of the sha in a pin worktree's directory name.

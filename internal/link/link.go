@@ -16,7 +16,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"skillet/internal/skill"
+	"github.com/finalsatan/skill-manager/internal/skill"
 )
 
 type Mode string

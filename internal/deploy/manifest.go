@@ -5,9 +5,9 @@ import (
 	"os"
 	"path/filepath"
 
-	"skillet/internal/agents"
-	"skillet/internal/manifest"
-	"skillet/internal/state"
+	"github.com/finalsatan/skill-manager/internal/agents"
+	"github.com/finalsatan/skill-manager/internal/manifest"
+	"github.com/finalsatan/skill-manager/internal/state"
 )
 
 var errNoProjectManifest = errors.New("skillet.toml belongs to a project; global scope is not supported")

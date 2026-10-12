@@ -9,10 +9,10 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"skillet/internal/config"
-	"skillet/internal/deploy"
-	"skillet/internal/schedule"
-	"skillet/internal/state"
+	"github.com/finalsatan/skill-manager/internal/config"
+	"github.com/finalsatan/skill-manager/internal/deploy"
+	"github.com/finalsatan/skill-manager/internal/schedule"
+	"github.com/finalsatan/skill-manager/internal/state"
 )
 
 func newScheduleCmd() *cobra.Command {

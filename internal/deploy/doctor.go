@@ -7,9 +7,9 @@ import (
 	"path/filepath"
 	"sort"
 
-	"skillet/internal/agents"
-	"skillet/internal/link"
-	"skillet/internal/state"
+	"github.com/finalsatan/skill-manager/internal/agents"
+	"github.com/finalsatan/skill-manager/internal/link"
+	"github.com/finalsatan/skill-manager/internal/state"
 )
 
 // Clash is one agent seeing several different skill directories that share

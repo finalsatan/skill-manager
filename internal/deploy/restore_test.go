@@ -6,9 +6,9 @@ import (
 	"strings"
 	"testing"
 
-	"skillet/internal/agents"
-	"skillet/internal/config"
-	"skillet/internal/manifest"
+	"github.com/finalsatan/skill-manager/internal/agents"
+	"github.com/finalsatan/skill-manager/internal/config"
+	"github.com/finalsatan/skill-manager/internal/manifest"
 )
 
 // fresh opens a second, empty store next to e's and returns a manager for it

@@ -10,8 +10,8 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
-	"skillet/internal/deploy"
-	"skillet/internal/i18n"
+	"github.com/finalsatan/skill-manager/internal/deploy"
+	"github.com/finalsatan/skill-manager/internal/i18n"
 )
 
 func TestUpdatesOnRealStore(t *testing.T) {

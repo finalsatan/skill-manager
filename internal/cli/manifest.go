@@ -7,9 +7,9 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"skillet/internal/agents"
-	"skillet/internal/deploy"
-	"skillet/internal/manifest"
+	"github.com/finalsatan/skill-manager/internal/agents"
+	"github.com/finalsatan/skill-manager/internal/deploy"
+	"github.com/finalsatan/skill-manager/internal/manifest"
 )
 
 // projectFlags are --dir/--exact for commands that only make sense for a project.

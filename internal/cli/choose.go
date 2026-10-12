@@ -11,10 +11,10 @@ import (
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 
-	"skillet/internal/agents"
-	"skillet/internal/config"
-	"skillet/internal/deploy"
-	"skillet/internal/state"
+	"github.com/finalsatan/skill-manager/internal/agents"
+	"github.com/finalsatan/skill-manager/internal/config"
+	"github.com/finalsatan/skill-manager/internal/deploy"
+	"github.com/finalsatan/skill-manager/internal/state"
 )
 
 // option is one row of a multi-select.

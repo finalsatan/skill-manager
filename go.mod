@@ -1,4 +1,4 @@
-module skillet
+module github.com/finalsatan/skill-manager
 
 go 1.27.2
 

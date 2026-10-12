@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"skillet/internal/agents"
+	"github.com/finalsatan/skill-manager/internal/agents"
 )
 
 func TestRepoInfo(t *testing.T) {

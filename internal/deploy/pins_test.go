@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"skillet/internal/link"
+	"github.com/finalsatan/skill-manager/internal/link"
 )
 
 func revParse(t *testing.T, dir string) string {

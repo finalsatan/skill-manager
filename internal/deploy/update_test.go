@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"skillet/internal/agents"
+	"github.com/finalsatan/skill-manager/internal/agents"
 )
 
 func (e *env) commit(t *testing.T, msg string, edit func(up string)) {

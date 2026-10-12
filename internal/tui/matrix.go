@@ -5,8 +5,8 @@ import (
 	"sort"
 	"strings"
 
-	"skillet/internal/agents"
-	"skillet/internal/deploy"
+	"github.com/finalsatan/skill-manager/internal/agents"
+	"github.com/finalsatan/skill-manager/internal/deploy"
 )
 
 // cellState is what one agent sees of one skill.

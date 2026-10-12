@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"skillet/internal/config"
-	"skillet/internal/state"
+	"github.com/finalsatan/skill-manager/internal/config"
+	"github.com/finalsatan/skill-manager/internal/state"
 )
 
 func upstreamCommit(t *testing.T, proj, file string) {

@@ -9,10 +9,10 @@ import (
 	"strings"
 	"testing"
 
-	"skillet/internal/agents"
-	"skillet/internal/config"
-	"skillet/internal/link"
-	"skillet/internal/state"
+	"github.com/finalsatan/skill-manager/internal/agents"
+	"github.com/finalsatan/skill-manager/internal/config"
+	"github.com/finalsatan/skill-manager/internal/link"
+	"github.com/finalsatan/skill-manager/internal/state"
 )
 
 type env struct {

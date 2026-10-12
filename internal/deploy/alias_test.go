@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"skillet/internal/manifest"
+	"github.com/finalsatan/skill-manager/internal/manifest"
 )
 
 func (e *env) enableAs(t *testing.T, skill, alias string, dry bool, ags ...string) []Result {

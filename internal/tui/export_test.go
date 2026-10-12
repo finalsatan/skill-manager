@@ -3,7 +3,7 @@ package tui
 import (
 	tea "charm.land/bubbletea/v2"
 
-	"skillet/internal/state"
+	"github.com/finalsatan/skill-manager/internal/state"
 )
 
 func stateLocked() error { return state.ErrLocked }

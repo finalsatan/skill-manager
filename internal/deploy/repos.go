@@ -8,10 +8,10 @@ import (
 	"path/filepath"
 	"sort"
 
-	"skillet/internal/gitx"
-	"skillet/internal/link"
-	"skillet/internal/skill"
-	"skillet/internal/state"
+	"github.com/finalsatan/skill-manager/internal/gitx"
+	"github.com/finalsatan/skill-manager/internal/link"
+	"github.com/finalsatan/skill-manager/internal/skill"
+	"github.com/finalsatan/skill-manager/internal/state"
 )
 
 // AddPlan is what AddRepo would do for a reference.

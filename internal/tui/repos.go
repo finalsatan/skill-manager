@@ -9,10 +9,10 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
-	"skillet/internal/agents"
-	"skillet/internal/deploy"
-	"skillet/internal/i18n"
-	"skillet/internal/state"
+	"github.com/finalsatan/skill-manager/internal/agents"
+	"github.com/finalsatan/skill-manager/internal/deploy"
+	"github.com/finalsatan/skill-manager/internal/i18n"
+	"github.com/finalsatan/skill-manager/internal/state"
 )
 
 // repoRow is one repo of the list.

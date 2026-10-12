@@ -3,9 +3,9 @@ package deploy
 import (
 	"fmt"
 
-	"skillet/internal/agents"
-	"skillet/internal/gitx"
-	"skillet/internal/manifest"
+	"github.com/finalsatan/skill-manager/internal/agents"
+	"github.com/finalsatan/skill-manager/internal/gitx"
+	"github.com/finalsatan/skill-manager/internal/manifest"
 )
 
 type RestoreOpts struct {

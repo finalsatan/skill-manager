@@ -3,7 +3,7 @@ package main
 import (
 	"os"
 
-	"skillet/internal/cli"
+	"github.com/finalsatan/skill-manager/internal/cli"
 )
 
 func main() {

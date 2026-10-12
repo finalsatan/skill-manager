@@ -11,11 +11,11 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"skillet/internal/config"
-	"skillet/internal/deploy"
+	"github.com/finalsatan/skill-manager/internal/config"
+	"github.com/finalsatan/skill-manager/internal/deploy"
 )
 
-// Version is set at build time with -ldflags "-X skillet/internal/cli.Version=...".
+// Version is set at build time with -ldflags "-X github.com/finalsatan/skill-manager/internal/cli.Version=...".
 var Version = "dev"
 
 func NewRoot() *cobra.Command {

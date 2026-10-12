@@ -5,10 +5,10 @@ import (
 	"path/filepath"
 	"sort"
 
-	"skillet/internal/agents"
-	"skillet/internal/link"
-	"skillet/internal/skill"
-	"skillet/internal/state"
+	"github.com/finalsatan/skill-manager/internal/agents"
+	"github.com/finalsatan/skill-manager/internal/link"
+	"github.com/finalsatan/skill-manager/internal/skill"
+	"github.com/finalsatan/skill-manager/internal/state"
 )
 
 // Entry is one skill an agent can see in a scope.

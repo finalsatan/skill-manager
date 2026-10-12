@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"skillet/internal/config"
+	"github.com/finalsatan/skill-manager/internal/config"
 )
 
 func registry(t *testing.T) *Registry {

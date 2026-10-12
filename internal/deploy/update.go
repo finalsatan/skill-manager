@@ -10,10 +10,10 @@ import (
 	"sync"
 	"time"
 
-	"skillet/internal/gitx"
-	"skillet/internal/link"
-	"skillet/internal/skill"
-	"skillet/internal/state"
+	"github.com/finalsatan/skill-manager/internal/gitx"
+	"github.com/finalsatan/skill-manager/internal/link"
+	"github.com/finalsatan/skill-manager/internal/skill"
+	"github.com/finalsatan/skill-manager/internal/state"
 )
 
 // SkillChange is one skill touched by upstream commits.

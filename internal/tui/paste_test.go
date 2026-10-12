@@ -7,7 +7,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"skillet/internal/i18n"
+	"github.com/finalsatan/skill-manager/internal/i18n"
 )
 
 const pastedURL = "https://github.com/anthropics/skills"

@@ -10,9 +10,9 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
-	"skillet/internal/agents"
-	"skillet/internal/deploy"
-	"skillet/internal/i18n"
+	"github.com/finalsatan/skill-manager/internal/agents"
+	"github.com/finalsatan/skill-manager/internal/deploy"
+	"github.com/finalsatan/skill-manager/internal/i18n"
 )
 
 // modalState is the preview dialog for the pending changes of one scope.

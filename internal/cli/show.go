@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	"skillet/internal/agents"
-	"skillet/internal/deploy"
+	"github.com/finalsatan/skill-manager/internal/agents"
+	"github.com/finalsatan/skill-manager/internal/deploy"
 )
 
 // printRepoInfo prints `repo show` for one repo.

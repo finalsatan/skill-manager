@@ -6,10 +6,10 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"skillet/internal/agents"
-	"skillet/internal/deploy"
-	"skillet/internal/i18n"
-	"skillet/internal/state"
+	"github.com/finalsatan/skill-manager/internal/agents"
+	"github.com/finalsatan/skill-manager/internal/deploy"
+	"github.com/finalsatan/skill-manager/internal/i18n"
+	"github.com/finalsatan/skill-manager/internal/state"
 )
 
 // storeMu serializes this process's own use of the store.

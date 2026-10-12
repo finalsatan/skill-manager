@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"skillet/internal/config"
+	"github.com/finalsatan/skill-manager/internal/config"
 )
 
 // Agent describes one coding agent's skill discovery rules.

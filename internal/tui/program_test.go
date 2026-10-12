@@ -11,7 +11,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 
-	"skillet/internal/i18n"
+	"github.com/finalsatan/skill-manager/internal/i18n"
 )
 
 // syncBuffer is an io.Writer the test can read while the program writes.

@@ -13,8 +13,8 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
-	"skillet/internal/agents"
-	"skillet/internal/i18n"
+	"github.com/finalsatan/skill-manager/internal/agents"
+	"github.com/finalsatan/skill-manager/internal/i18n"
 )
 
 // item is one line of the list: a scope section header (all-scopes view,

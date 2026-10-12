@@ -9,11 +9,11 @@ import (
 	"sort"
 	"strings"
 
-	"skillet/internal/agents"
-	"skillet/internal/config"
-	"skillet/internal/gitx"
-	"skillet/internal/link"
-	"skillet/internal/state"
+	"github.com/finalsatan/skill-manager/internal/agents"
+	"github.com/finalsatan/skill-manager/internal/config"
+	"github.com/finalsatan/skill-manager/internal/gitx"
+	"github.com/finalsatan/skill-manager/internal/link"
+	"github.com/finalsatan/skill-manager/internal/state"
 )
 
 type Manager struct {

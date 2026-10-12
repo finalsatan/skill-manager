@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"skillet/internal/i18n"
+	"github.com/finalsatan/skill-manager/internal/i18n"
 )
 
 func TestPendingSetToggleBack(t *testing.T) {

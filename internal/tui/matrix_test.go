@@ -5,8 +5,8 @@ import (
 	"reflect"
 	"testing"
 
-	"skillet/internal/agents"
-	"skillet/internal/deploy"
+	"github.com/finalsatan/skill-manager/internal/agents"
+	"github.com/finalsatan/skill-manager/internal/deploy"
 )
 
 const proj = "/work/proj"

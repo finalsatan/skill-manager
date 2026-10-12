@@ -8,10 +8,10 @@ import (
 	"strings"
 	"time"
 
-	"skillet/internal/agents"
-	"skillet/internal/link"
-	"skillet/internal/skill"
-	"skillet/internal/state"
+	"github.com/finalsatan/skill-manager/internal/agents"
+	"github.com/finalsatan/skill-manager/internal/link"
+	"github.com/finalsatan/skill-manager/internal/skill"
+	"github.com/finalsatan/skill-manager/internal/state"
 )
 
 // ErrNameTaken is matched (errors.Is) by the refusal to link a skill under a

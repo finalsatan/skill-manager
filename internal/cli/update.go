@@ -10,10 +10,10 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"skillet/internal/agents"
-	"skillet/internal/deploy"
-	"skillet/internal/notify"
-	"skillet/internal/state"
+	"github.com/finalsatan/skill-manager/internal/agents"
+	"github.com/finalsatan/skill-manager/internal/deploy"
+	"github.com/finalsatan/skill-manager/internal/notify"
+	"github.com/finalsatan/skill-manager/internal/state"
 )
 
 func newCheckCmd() *cobra.Command {

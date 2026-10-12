@@ -8,8 +8,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"skillet/internal/agents"
-	"skillet/internal/deploy"
+	"github.com/finalsatan/skill-manager/internal/agents"
+	"github.com/finalsatan/skill-manager/internal/deploy"
 )
 
 type statusRow struct {
