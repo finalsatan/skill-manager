@@ -249,8 +249,20 @@ func (m Model) update(msg tea.Msg) (Model, tea.Cmd) {
 	case tea.KeyPressMsg:
 		return m.handleKey(msg)
 	default:
-		// Cursor blinks and the like belong to the search box.
-		if m.tab == tabSkills && m.skills.capturing() {
+		// Everything else that is not for the model itself (pasted text, the
+		// clipboard's answer to ctrl+v, cursor blinks) belongs to the text
+		// input that has the focus, if any; otherwise it is dropped.
+		if p, ok := msg.(tea.PasteMsg); ok {
+			// The inputs are single-line.
+			p.Content = strings.NewReplacer("\r", "", "\n", "").Replace(p.Content)
+			msg = p
+		}
+		switch {
+		case m.modal.open && m.modal.hasInput:
+			var cmd tea.Cmd
+			m.modal.input, cmd = m.modal.input.Update(msg)
+			return m, cmd
+		case !m.modal.open && m.tab == tabSkills && m.skills.capturing():
 			var cmd tea.Cmd
 			m.skills, cmd = m.skills.Update(msg)
 			return m, cmd
