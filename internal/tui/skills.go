@@ -448,7 +448,7 @@ func newSkillKeys() skillKeys {
 func (m skillsModel) helpGroups() [][]key.Binding {
 	k := newSkillKeys()
 	if m.editing {
-		return [][]key.Binding{{k.Up, k.PgUp}, {k.Done, k.Clear}}
+		return [][]key.Binding{{k.Up, k.PgUp, k.Left}, {k.Done, k.Clear}}
 	}
 	return [][]key.Binding{{k.Up, k.PgUp, k.Top, k.Left}, {k.Toggle, k.ToggleRow, k.Review, k.Clear}, {k.Pin, k.Alias, k.Filter, k.Search}, {k.View, k.FoldAll}}
 }
@@ -457,7 +457,7 @@ func (m skillsModel) helpGroups() [][]key.Binding {
 func (m skillsModel) shortHelp() []key.Binding {
 	k := newSkillKeys()
 	if m.editing {
-		return []key.Binding{k.Up, k.Done, k.Clear}
+		return []key.Binding{k.Up, k.Left, k.Done, k.Clear}
 	}
 	if m.onHeader() {
 		return []key.Binding{k.Up, k.Fold, k.FoldAll}
@@ -496,6 +496,17 @@ func (m skillsModel) Update(msg tea.Msg) (skillsModel, tea.Cmd) {
 				return m, nil
 			case "pgdown":
 				m.moveBy(max(m.listH-1, 1))
+				return m, nil
+			case "left", "right":
+				// The agent column, as outside the box; the query's own cursor
+				// moves with home/end and ctrl+a/e/b/f.
+				if !m.onHeader() {
+					if kp.String() == "left" {
+						m.col = max(m.col-1, 0)
+					} else {
+						m.col = min(m.col+1, max(len(m.data.Agents)-1, 0))
+					}
+				}
 				return m, nil
 			}
 		}

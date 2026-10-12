@@ -171,22 +171,70 @@ func TestSearchWalkingOverGroupHeaders(t *testing.T) {
 	if m.skills.query != "alp" {
 		t.Errorf("query %q", m.skills.query)
 	}
-	// ←/→ still move inside the query.
+	// ←/→ are not for the query; ctrl+a moves its cursor to the start.
 	m = send(t, m, press("left"), press("x"))
-	if m.skills.query != "alxp" {
-		t.Errorf("left in the query: %q", m.skills.query)
+	if m.skills.query != "alpx" {
+		t.Errorf("left moved the query cursor: %q", m.skills.query)
 	}
 }
 
 func TestSearchFooter(t *testing.T) {
 	m := loadedModel(t, i18n.EN)
 	m = send(t, m, press("/"))
-	if v := plain(m.View()); !strings.Contains(v, "↑/↓ move • enter done • esc clear") {
+	if v := plain(m.View()); !strings.Contains(v, "↑/↓ move • ←/→ cell • enter done • esc clear") {
 		t.Errorf("en footer:\n%s", v)
 	}
 	zh := loadedModel(t, i18n.ZH)
 	zh = send(t, zh, press("/"))
-	if v := plain(zh.View()); !strings.Contains(v, "↑/↓ 移动 • enter 确定 • esc 清除") {
+	if v := plain(zh.View()); !strings.Contains(v, "↑/↓ 移动 • ←/→ 格 • enter 确定 • esc 清除") {
 		t.Errorf("zh footer:\n%s", v)
+	}
+}
+
+func TestSearchLeftRightMoveTheColumn(t *testing.T) {
+	m := loadedModel(t, i18n.EN)
+	m = send(t, m, press("/"), press("s"), press("k"))
+	col := m.skills.col
+	m = send(t, m, press("right"), press("right"))
+	if m.skills.col != col+2 || m.skills.query != "sk" || !m.skills.editing {
+		t.Fatalf("right: col=%d query=%q", m.skills.col, m.skills.query)
+	}
+	m = send(t, m, press("left"))
+	if m.skills.col != col+1 || m.skills.query != "sk" {
+		t.Errorf("left: col=%d query=%q", m.skills.col, m.skills.query)
+	}
+	// A typed character still lands at the query's end: the arrows did not move it.
+	m = send(t, m, press("i"))
+	if m.skills.query != "ski" {
+		t.Errorf("query %q", m.skills.query)
+	}
+	// The query's own cursor: ctrl+a to the start, ctrl+e to the end.
+	m = send(t, m, ctrl('a'), press("x"))
+	if m.skills.query != "xski" {
+		t.Errorf("ctrl+a: %q", m.skills.query)
+	}
+	m = send(t, m, ctrl('e'), press("z"))
+	if m.skills.query != "xskiz" {
+		t.Errorf("ctrl+e: %q", m.skills.query)
+	}
+	m = send(t, m, ctrl('b'), press("y"))
+	if m.skills.query != "xskiyz" {
+		t.Errorf("ctrl+b: %q", m.skills.query)
+	}
+	// Enter leaves the box; the toggle acts on the column chosen while typing.
+	m = send(t, m, press("esc"), press("/"))
+	m = send(t, m, press("right"), press("enter"), press("space"))
+	if cellOf(m, "docx", "codex") != "+" && cellOf(m, "docx", "opencode") != "+" {
+		t.Errorf("space after enter did not use the chosen column (col=%d)", m.skills.col)
+	}
+}
+
+func TestSearchLeftRightOnAHeaderDoNothing(t *testing.T) {
+	m := groupedAt(t, i18n.EN)
+	m = send(t, m, press("/"), press("a"))
+	col := m.skills.col
+	m = send(t, m, press("right"), press("left"))
+	if m.skills.col != col || m.skills.query != "a" {
+		t.Errorf("col=%d query=%q", m.skills.col, m.skills.query)
 	}
 }
