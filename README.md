@@ -23,6 +23,10 @@ skillet            # run without a subcommand in a terminal to open the UI
 skillet tui        # same; with no terminal, --no-input, SKILLET_NO_INPUT or CI, `skillet` just prints help
 ```
 
+![Skills tab: skill × agent matrix with pending changes](docs/images/tui-skills.png)
+
+![Updates tab: upstream commits to review before updating](docs/images/tui-updates.png)
+
 Four tabs, switched with `1`–`4` (or `tab`):
 
 - **Skills**: a skill × agent matrix. `↑/↓` move, `←/→` pick the agent column, `space` toggles the current cell (`+` pending enable, `−` pending disable), `a` toggles the whole row, `enter` previews and applies, `esc` clears pending changes; `f` shows only enabled skills, `/` searches, `p` pins a version, `R` renames the link. Skills are grouped by repository and all groups start collapsed: `space`/`enter` collapses or expands a repository, `z` collapses/expands all, `v` switches to a flat view; `s` cycles the scope through project → global → all ("all" is read-only).

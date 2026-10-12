@@ -23,6 +23,10 @@ skillet            # 在终端里不带子命令运行，直接进入界面
 skillet tui        # 同上；非终端、--no-input、SKILLET_NO_INPUT、CI 时 `skillet` 只打印帮助
 ```
 
+![技能标签：skill × agent 矩阵与待应用的改动](docs/images/tui-skills-zh.png)
+
+![更新标签：更新前审阅上游提交](docs/images/tui-updates-zh.png)
+
 四个标签，按 `1`–`4`（或 `tab`）切换：
 
 - **技能**：skill × agent 矩阵。`↑/↓` 移动，`←/→` 选 agent 列，`space` 切换当前格（`+` 待启用、`−` 待停用），`a` 整行切换，`enter` 预览并应用，`esc` 清除待应用项；`f` 只看已启用，`/` 搜索，`p` 固定版本，`R` 改链接名；默认按仓库分组且全部折叠：`space`/`enter` 折叠或展开仓库，`z` 全部折叠/展开，`v` 切换平铺视图；`s` 在 项目 → 全局 → 全部 间切换范围（「全部」只读）。
