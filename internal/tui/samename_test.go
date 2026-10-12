@@ -68,18 +68,19 @@ func TestPathHintWithAnAlias(t *testing.T) {
 func TestNameCellTruncation(t *testing.T) {
 	cases := []struct {
 		name, path string
-		w          int
+		w, align   int
 		left, hint string
 	}{
-		{"pdf", "", 10, "pdf       ", ""},
-		{"pdf", "skills/pdf", 20, "pdf", "  skills/pdf     "},
-		{"pdf", ".openclaw/skills/pdf", 16, "pdf", "  …skills/pdf"}, // the tail is kept
-		{"pdf", ".openclaw/skills/pdf", 9, "pdf", "  …pdf"},
-		{"pdf", ".openclaw/skills/pdf", 8, "pdf     ", ""}, // no room for a useful directory
-		{"数据", "skills/数据", 14, "数据", "  …ls/数据"},
+		{"pdf", "", 10, 0, "pdf       ", ""},
+		{"pdf", "skills/pdf", 20, 0, "pdf", "  skills/pdf     "},
+		{"pdf", "skills/pdf", 24, 8, "pdf", "       skills/pdf"},       // aligned after the widest name,
+		{"pdf", ".openclaw/skills/pdf", 16, 0, "pdf", "  …skills/pdf"}, // the tail is kept
+		{"pdf", ".openclaw/skills/pdf", 9, 0, "pdf", "  …pdf"},
+		{"pdf", ".openclaw/skills/pdf", 8, 0, "pdf     ", ""}, // no room for a useful directory
+		{"数据", "skills/数据", 14, 0, "数据", "  …ls/数据"},
 	}
 	for _, c := range cases {
-		left, hint := nameCell(c.name, c.path, c.w)
+		left, hint := nameCell(c.name, c.path, c.w, c.align)
 		if lipgloss.Width(left)+lipgloss.Width(hint) != c.w {
 			t.Errorf("%v: width %d != %d", c, lipgloss.Width(left)+lipgloss.Width(hint), c.w)
 		}
@@ -225,6 +226,20 @@ func TestPonytailLayout(t *testing.T) {
 		}
 		last = variant
 	}
+	// The directories start in one column, whatever the length of the name.
+	cols := map[int]bool{}
+	for _, n := range names {
+		for _, p := range []string{"skills/" + n, ".openclaw/skills/" + n} {
+			for _, l := range lines {
+				if i := strings.Index(l, "  "+p); i >= 0 && strings.HasSuffix(strings.TrimRight(l, " "), p) || (i >= 0 && strings.Contains(l, "  "+p+" ")) {
+					cols[lipgloss.Width(l[:i+2])] = true
+				}
+			}
+		}
+	}
+	if len(cols) != 1 {
+		t.Errorf("directories start in several columns %v:\n%s", cols, strings.Join(lines, "\n"))
+	}
 	for _, l := range lines {
 		if strings.Contains(l, "ponytail") && strings.Contains(l, "…") && !strings.Contains(l, "ponytail-") {
 			t.Errorf("truncated row: %q", l)
@@ -248,5 +263,25 @@ func TestPonytailLayout(t *testing.T) {
 	narrow := plain(send(t, flat, tea_size(100, 40)).View())
 	if !strings.Contains(narrow, "skills/ponytail-review") {
 		t.Errorf("flat 100 lost the directory's tail:\n%s", narrow)
+	}
+}
+
+func TestAlignedSuffixLeavesUnlabeledRowsAlone(t *testing.T) {
+	rows := buildRows(buildInput{Scope: agents.Scope{Dir: proj}, Agents: testAgents(), Skills: []skillInfo{
+		{ID: "r:a/x", Name: "x", Repo: "r", RelPath: "a/x"}, {ID: "r:b/x", Name: "x", Repo: "r", RelPath: ".b/x"},
+		{ID: "r:long", Name: "longer-name", Repo: "r", RelPath: "longer-name"}, {ID: "r:.c/longer-name", Name: "longer-name", Repo: "r", RelPath: ".c/longer-name"},
+		{ID: "r:solo", Name: "solo", Repo: "r", RelPath: "solo"},
+	}, Undeployed: true})
+	m := newTestModel(t, i18n.EN)
+	m = send(t, m, skillsMsg{kind: scopeProject, data: skillsData{Agents: testAgents(), Sections: []section{{Scope: agents.Scope{Dir: proj}, Rows: rows}}}}, press("v"))
+	v := plain(m.View())
+	// "x" is padded to the width of "longer-name" (11) plus two spaces.
+	if !strings.Contains(v, "x"+strings.Repeat(" ", 12)+"a/x") || !strings.Contains(v, "longer-name  longer-name") {
+		t.Errorf("not aligned:\n%s", v)
+	}
+	for _, l := range strings.Split(v, "\n") {
+		if strings.Contains(l, "solo") && (strings.Contains(l, "solo  ") && strings.Contains(l, "/")) {
+			t.Errorf("unlabeled row got a suffix: %q", l)
+		}
 	}
 }

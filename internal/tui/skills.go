@@ -666,7 +666,7 @@ func (m skillsModel) columns() columns {
 			hinted = hinted || it.r.PathHint != ""
 			w := lipgloss.Width(it.r.Name) + m.indent()
 			if it.r.PathHint != "" {
-				w += 2 + lipgloss.Width(it.r.PathHint)
+				w = m.labelWidth(it.sec) + 2 + lipgloss.Width(it.r.PathHint)
 			}
 			nameW = max(nameW, w)
 			repoW = max(repoW, lipgloss.Width(shortRepo(it.r.Repo)))
@@ -699,22 +699,39 @@ func (m skillsModel) columns() columns {
 }
 
 // nameCell lays out the name column: the name, then (when set) the skill's
-// directory after two spaces, always w cells in all. The directory gives way
+// directory after two spaces, starting at least at column align, always w cells in all. The directory gives way
 // first and keeps its tail, which is what tells same-named skills apart
 // (`…cy/pdf`); the name is cut only when there is no room for even a short
 // directory.
-func nameCell(name, path string, w int) (left, hint string) {
+func nameCell(name, path string, w, align int) (left, hint string) {
 	nw := lipgloss.Width(name)
-	if path == "" || nw+2+4 > w {
+	col := max(nw, align) // where the directory column starts, before its two spaces
+	if path == "" || col+2+4 > w {
 		return padTo(name, w), ""
 	}
-	room := w - nw - 2
+	room := w - col - 2
 	pw := lipgloss.Width(path)
 	if pw > room {
 		path = "…" + ansi.TruncateLeft(path, pw-room+1, "")
 	}
-	hint = "  " + path
+	hint = strings.Repeat(" ", col-nw+2) + path
 	return name, hint + strings.Repeat(" ", max(w-nw-lipgloss.Width(hint), 0))
+}
+
+// labelWidth is the width of the widest labeled name (with its indent) of a
+// section, over all its rows: the directories of that section start in a
+// common column after it.
+func (m skillsModel) labelWidth(sec int) int {
+	if sec >= len(m.data.Sections) {
+		return 0
+	}
+	w := 0
+	for _, r := range m.data.Sections[sec].Rows {
+		if r.PathHint != "" {
+			w = max(w, lipgloss.Width(r.Name)+m.indent())
+		}
+	}
+	return w
 }
 
 // padTo truncates s to w cells and pads with spaces; widths are in cells, so
@@ -792,7 +809,7 @@ func (m skillsModel) cellText(r *row, agent string, st styles) (string, lipgloss
 	return c.glyph(), m.cellStyle(c, st)
 }
 
-func (m skillsModel) renderRow(r *row, sel bool, c columns, st styles) string {
+func (m skillsModel) renderRow(r *row, sec int, sel bool, c columns, st styles) string {
 	indent := m.indent()
 	// Selected rows are drawn in reverse video piece by piece, so the focused
 	// cell can stand out: it is bracketed and not reversed.
@@ -810,7 +827,7 @@ func (m skillsModel) renderRow(r *row, sel bool, c columns, st styles) string {
 		marker = "▸ "
 	}
 	seg(marker, plainStyle)
-	name, hint := nameCell(strings.Repeat(" ", indent)+r.Name, r.PathHint, c.name)
+	name, hint := nameCell(strings.Repeat(" ", indent)+r.Name, r.PathHint, c.name, m.labelWidth(sec))
 	seg(name, plainStyle)
 	seg(hint, st.Dim)
 	seg("  ", plainStyle)
@@ -933,7 +950,7 @@ func (m skillsModel) listLines(c columns, st styles) []string {
 			out = append(out, st.Bold.Render(ansi.Truncate("── "+it.header+" ──", m.w, "…")))
 			continue
 		}
-		out = append(out, m.renderRow(it.r, i == m.cursor, c, st))
+		out = append(out, m.renderRow(it.r, it.sec, i == m.cursor, c, st))
 	}
 	return out
 }
