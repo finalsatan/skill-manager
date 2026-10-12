@@ -73,8 +73,12 @@ func TestProgramEnablesSkillEndToEnd(t *testing.T) {
 		}
 	}
 
-	waitFor(t, "the matrix to load", func() bool { return strings.Contains(out.text(), "docx") })
-	send(" ") // first row (docx), first column (claude): pending enable
+	// Grouped by default: the one repo starts collapsed (nothing is enabled).
+	waitFor(t, "the matrix to load", func() bool { return strings.Contains(out.text(), "2 skills") })
+	send("\r") // enter on the group header unfolds it
+	waitFor(t, "the group to unfold", func() bool { return strings.Contains(out.text(), "docx") })
+	send("j")
+	send(" ") // docx, first column (claude): pending enable
 	waitFor(t, "the pending summary", func() bool { return strings.Contains(out.text(), "1 changes pending") })
 	send("\r")
 	waitFor(t, "the preview", func() bool { return strings.Contains(out.text(), "[ Apply ]") })

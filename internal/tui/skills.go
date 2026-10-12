@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"charm.land/bubbles/v2/key"
@@ -16,11 +17,43 @@ import (
 	"skillet/internal/i18n"
 )
 
-// item is one line of the list: a section header (all-scopes view) or a row.
+// item is one line of the list: a scope section header (all-scopes view,
+// never selectable), a repo group header (grouped view) or a row.
 type item struct {
 	header string
+	grp    *groupHeader
 	r      *row
 	sec    int // index into data.Sections
+}
+
+// selectable reports whether the cursor may rest on the item.
+func (it item) selectable() bool { return it.r != nil || it.grp != nil }
+
+// groupHeader is the header line of a repo group and what the detail pane
+// says about it.
+type groupHeader struct {
+	key      string // repo id, or unmanagedKey
+	title    string
+	total    int // skills in the group
+	shown    int // of those, matching the filters
+	enabled  int
+	pending  int // pending cell changes
+	updates  int // skills with an upstream update
+	repoDir  string
+	head     string
+	expanded bool // the stored fold state
+	open     bool // its rows are listed: expanded, or a search is active
+}
+
+// unmanagedKey is the group of entries skillet did not create.
+const unmanagedKey = "\x00unmanaged"
+
+// groupKey is the group a row belongs to: its repo, or the unmanaged group.
+func groupKey(r *row) string {
+	if !r.managed() {
+		return unmanagedKey
+	}
+	return r.Repo
 }
 
 // skillsModel is the Skills tab: a matrix of skills by agent with a detail
@@ -31,6 +64,7 @@ type skillsModel struct {
 	loaded  bool
 	items   []item
 	total   int // rows before filtering
+	shown   int // rows matching the filters, folded or not
 	cursor  int // index into items; always a row when there is one
 	offset  int // first visible item
 	w, h    int
@@ -44,13 +78,16 @@ type skillsModel struct {
 	col    int       // focused agent column
 	pend   map[scopeKind]pendingSet
 	notice string // a message for the status line, taken by the root
+
+	flat bool                          // one list of skills instead of repo groups
+	fold map[scopeKind]map[string]bool // group key -> expanded, per scope
 }
 
 func newSkillsModel() skillsModel {
 	ti := textinput.New()
 	ti.Prompt = ""
 	ti.SetWidth(30)
-	return skillsModel{search: ti, pend: map[scopeKind]pendingSet{}}
+	return skillsModel{search: ti, pend: map[scopeKind]pendingSet{}, fold: map[scopeKind]map[string]bool{}}
 }
 
 // capturing reports whether the tab wants every key, so the root must not
@@ -60,13 +97,76 @@ func (m skillsModel) capturing() bool { return m.editing }
 func (m *skillsModel) setData(d skillsData, kind scopeKind) {
 	m.data, m.kind, m.all, m.loaded = d, kind, kind == scopeAll, true
 	m.col = min(m.col, max(len(d.Agents)-1, 0))
+	// Groups seen for the first time start expanded when something in them is
+	// enabled or about to be; known groups keep their fold state.
+	if !m.all {
+		if m.fold[kind] == nil {
+			m.fold[kind] = map[string]bool{}
+		}
+		live := map[string]bool{}
+		for _, sec := range d.Sections {
+			for key, g := range m.groupStats(sec.Rows) {
+				live[key] = true
+				if _, ok := m.fold[kind][key]; !ok {
+					m.fold[kind][key] = g.enabled > 0 || g.pending > 0
+				}
+			}
+		}
+		for key := range m.fold[kind] {
+			if !live[key] {
+				delete(m.fold[kind], key) // the repo is gone
+			}
+		}
+	}
 	m.rebuild()
+}
+
+// grouped reports whether the list is shown in repo groups.
+func (m skillsModel) grouped() bool { return !m.flat && !m.all }
+
+// indent is how far skill rows are indented under their group header.
+func (m skillsModel) indent() int {
+	if m.grouped() {
+		return 2
+	}
+	return 0
+}
+
+// groupStats summarises the rows by group, before any filtering.
+func (m skillsModel) groupStats(rows []row) map[string]*groupHeader {
+	out := map[string]*groupHeader{}
+	for i := range rows {
+		r := &rows[i]
+		key := groupKey(r)
+		g := out[key]
+		if g == nil {
+			g = &groupHeader{key: key, title: shortRepo(r.Repo), repoDir: r.RepoDir, head: r.Head}
+			if key == unmanagedKey {
+				g.title = i18n.T("group.unmanaged")
+			}
+			out[key] = g
+		}
+		g.total++
+		if r.enabled() {
+			g.enabled++
+		}
+		if r.Pending {
+			g.updates++
+		}
+		if g.repoDir == "" {
+			g.repoDir, g.head = r.RepoDir, r.Head
+		}
+		if r.managed() {
+			g.pending += len(m.pend[m.kind][r.ID])
+		}
+	}
+	return out
 }
 
 // reset drops the data while a new scope loads. Pending changes are kept per
 // scope, so they are still there when the user comes back.
 func (m *skillsModel) reset(kind scopeKind) {
-	*m = skillsModel{search: m.search, only: m.only, query: m.query, w: m.w, h: m.h, kind: kind, pend: m.pend}
+	*m = skillsModel{search: m.search, only: m.only, query: m.query, w: m.w, h: m.h, kind: kind, pend: m.pend, flat: m.flat, fold: m.fold}
 	m.layout()
 }
 
@@ -91,46 +191,153 @@ func (m *skillsModel) layout() {
 	m.scrollToCursor()
 }
 
-// selKey identifies the selected row across rebuilds.
-func (m skillsModel) selKey() string {
-	if m.cursor < len(m.items) && m.items[m.cursor].r != nil {
-		it := m.items[m.cursor]
-		return fmt.Sprintf("%d/%s", it.sec, it.r.Key)
+// itemKey identifies a selectable item across rebuilds.
+func itemKey(it item) string {
+	switch {
+	case it.r != nil:
+		return fmt.Sprintf("r:%d/%s", it.sec, it.r.Key)
+	case it.grp != nil:
+		return "g:" + it.grp.key
 	}
 	return ""
 }
 
 // rebuild recomputes the visible items from the data and the filters, keeping
-// the selection when the row is still there.
+// the selection when the item is still there. A row that is now folded away
+// leaves the cursor on its group's header, and a header that is gone (flat
+// view) on the group's first row.
 func (m *skillsModel) rebuild() {
-	prev := m.selKey()
-	m.items, m.total = nil, 0
+	prev, prevGroup, prevHeader := "", "", false
+	if m.cursor < len(m.items) {
+		it := m.items[m.cursor]
+		prev = itemKey(it)
+		switch {
+		case it.r != nil:
+			prevGroup = groupKey(it.r)
+		case it.grp != nil:
+			prevGroup, prevHeader = it.grp.key, true
+		}
+	}
+	m.items, m.total, m.shown = nil, 0, 0
 	for si := range m.data.Sections {
 		sec := &m.data.Sections[si]
 		m.total += len(sec.Rows)
 		rows := filterRows(sec.Rows, m.only, m.query)
+		m.shown += len(rows)
 		if len(rows) == 0 {
 			continue
 		}
-		if m.all {
+		switch {
+		case m.all:
 			title := sec.Scope.Dir
 			if sec.Scope.Global {
 				title = i18n.T("section.global")
 			}
 			m.items = append(m.items, item{header: title, sec: si})
-		}
-		for i := range rows {
-			m.items = append(m.items, item{r: &rows[i], sec: si})
+			for i := range rows {
+				m.items = append(m.items, item{r: &rows[i], sec: si})
+			}
+		case m.flat:
+			for i := range rows {
+				m.items = append(m.items, item{r: &rows[i], sec: si})
+			}
+		default:
+			m.groupItems(si, sec.Rows, rows)
 		}
 	}
-	m.cursor = m.rowIndex(false)
+	m.cursor = m.edgeIndex(false)
+	found := false
 	for i, it := range m.items {
-		if it.r != nil && fmt.Sprintf("%d/%s", it.sec, it.r.Key) == prev {
-			m.cursor = i
+		if it.selectable() && prev != "" && itemKey(it) == prev {
+			m.cursor, found = i, true
 			break
 		}
 	}
+	if !found && prevGroup != "" {
+		for i, it := range m.items {
+			if (!prevHeader && it.grp != nil && it.grp.key == prevGroup) || (prevHeader && it.r != nil && groupKey(it.r) == prevGroup) {
+				m.cursor = i
+				break
+			}
+		}
+	}
 	m.scrollToCursor()
+}
+
+// groupItems appends the grouped list of one section: a header per repo in
+// id order, unmanaged entries last, and under each expanded header its rows.
+// all are the section's rows, rows those matching the filters.
+func (m *skillsModel) groupItems(si int, all, rows []row) {
+	stats := m.groupStats(all)
+	buckets := map[string][]int{}
+	for i := range rows {
+		k := groupKey(&rows[i])
+		buckets[k] = append(buckets[k], i)
+	}
+	var keys []string
+	for k := range buckets {
+		keys = append(keys, k)
+	}
+	sort.Slice(keys, func(i, j int) bool {
+		if (keys[i] == unmanagedKey) != (keys[j] == unmanagedKey) {
+			return keys[j] == unmanagedKey
+		}
+		return keys[i] < keys[j]
+	})
+	for _, k := range keys {
+		g := *stats[k]
+		g.shown = len(buckets[k])
+		g.expanded = m.fold[m.kind][k]
+		g.open = g.expanded || m.query != ""
+		m.items = append(m.items, item{grp: &g, sec: si})
+		if !g.open {
+			continue
+		}
+		for _, i := range buckets[k] {
+			m.items = append(m.items, item{r: &rows[i], sec: si})
+		}
+	}
+}
+
+// onHeader reports whether the cursor is on a group header.
+func (m skillsModel) onHeader() bool {
+	return m.cursor < len(m.items) && m.items[m.cursor].grp != nil
+}
+
+// toggleFold folds or unfolds the group under the cursor. While a search is
+// active every group with matches is open, so there is nothing to fold.
+func (m *skillsModel) toggleFold() {
+	if !m.onHeader() || m.query != "" {
+		return
+	}
+	k := m.items[m.cursor].grp.key
+	m.fold[m.kind][k] = !m.fold[m.kind][k]
+	m.rebuild()
+}
+
+// foldAll collapses every group, or expands them all when none is expanded.
+func (m *skillsModel) foldAll() {
+	if m.query != "" || m.all || m.flat {
+		return
+	}
+	any := false
+	for _, open := range m.fold[m.kind] {
+		any = any || open
+	}
+	for k := range m.fold[m.kind] {
+		m.fold[m.kind][k] = !any
+	}
+	m.rebuild()
+}
+
+// toggleView switches between the grouped and the flat list.
+func (m *skillsModel) toggleView() {
+	if m.all {
+		m.notice = i18n.T("view.allflat")
+		return
+	}
+	m.flat = !m.flat
+	m.rebuild()
 }
 
 func (m skillsModel) selected() *item {
@@ -140,10 +347,11 @@ func (m skillsModel) selected() *item {
 	return nil
 }
 
-// move steps to the next row in direction d, skipping section headers.
+// move steps to the next selectable item in direction d, skipping scope
+// section headers.
 func (m *skillsModel) move(d int) {
 	for i := m.cursor + d; i >= 0 && i < len(m.items); i += d {
-		if m.items[i].r != nil {
+		if m.items[i].selectable() {
 			m.cursor = i
 			break
 		}
@@ -165,11 +373,12 @@ func (m *skillsModel) moveBy(n int) {
 	}
 }
 
-// rowIndex is the index of the first (or last) row item, 0 when there is none.
-func (m skillsModel) rowIndex(last bool) int {
+// edgeIndex is the index of the first (or last) selectable item, 0 when there
+// is none.
+func (m skillsModel) edgeIndex(last bool) int {
 	idx := 0
 	for i, it := range m.items {
-		if it.r == nil {
+		if !it.selectable() {
 			continue
 		}
 		idx = i
@@ -181,7 +390,7 @@ func (m skillsModel) rowIndex(last bool) int {
 }
 
 func (m *skillsModel) jump(last bool) {
-	m.cursor = m.rowIndex(last)
+	m.cursor = m.edgeIndex(last)
 	m.scrollToCursor()
 }
 
@@ -189,8 +398,8 @@ func (m *skillsModel) scrollToCursor() {
 	if m.cursor < m.offset {
 		m.offset = m.cursor
 	}
-	// Show the section header above the first row of a section.
-	if m.cursor == m.offset+0 && m.cursor > 0 && m.items[m.cursor-1].r == nil {
+	// Show the scope section header above the first row of a section.
+	if m.cursor == m.offset && m.cursor > 0 && m.items[m.cursor-1].r == nil && m.items[m.cursor-1].grp == nil {
 		m.offset = m.cursor - 1
 	}
 	if m.listH > 0 && m.cursor >= m.offset+m.listH {
@@ -205,7 +414,7 @@ type skillKeys struct {
 	Up, Down, PgUp, PgDown, Top, Bottom, Filter, Search key.Binding
 	Confirm, Clear                                      key.Binding
 	Left, Right, Toggle, ToggleRow, Review              key.Binding
-	Pin, Alias                                          key.Binding
+	Pin, Alias, View, FoldAll                           key.Binding
 }
 
 func newSkillKeys() skillKeys {
@@ -224,6 +433,8 @@ func newSkillKeys() skillKeys {
 		ToggleRow: key.NewBinding(key.WithKeys("a"), key.WithHelp("a", i18n.T("help.row"))),
 		Pin:       key.NewBinding(key.WithKeys("p"), key.WithHelp("p", i18n.T("help.pin"))),
 		Alias:     key.NewBinding(key.WithKeys("R"), key.WithHelp("R", i18n.T("help.alias"))),
+		View:      key.NewBinding(key.WithKeys("v"), key.WithHelp("v", i18n.T("help.view"))),
+		FoldAll:   key.NewBinding(key.WithKeys("z"), key.WithHelp("z", i18n.T("help.foldall"))),
 		Review:    key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", i18n.T("help.review"))),
 		Confirm:   key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", i18n.T("help.confirm"))),
 		Clear:     key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", i18n.T("help.clear"))),
@@ -236,7 +447,7 @@ func (m skillsModel) helpGroups() [][]key.Binding {
 	if m.editing {
 		return [][]key.Binding{{k.Confirm, k.Clear}}
 	}
-	return [][]key.Binding{{k.Up, k.PgUp, k.Top, k.Left}, {k.Toggle, k.ToggleRow, k.Review, k.Clear}, {k.Pin, k.Alias, k.Filter, k.Search}}
+	return [][]key.Binding{{k.Up, k.PgUp, k.Top, k.Left}, {k.Toggle, k.ToggleRow, k.Review, k.Clear}, {k.Pin, k.Alias, k.Filter, k.Search}, {k.View, k.FoldAll}}
 }
 
 // shortHelp is the compact footer: the few keys that fit on one line.
@@ -296,6 +507,14 @@ func (m skillsModel) Update(msg tea.Msg) (skillsModel, tea.Cmd) {
 	case key.Matches(kp, k.Search):
 		m.editing = true
 		return m, m.search.Focus()
+	case key.Matches(kp, k.View):
+		m.toggleView()
+	case key.Matches(kp, k.FoldAll):
+		m.foldAll()
+	case m.onHeader() && key.Matches(kp, k.Toggle):
+		m.toggleFold()
+	case m.onHeader() && (key.Matches(kp, k.Left) || key.Matches(kp, k.Right) || key.Matches(kp, k.ToggleRow)):
+		// Cells belong to skills, not to a group.
 	case key.Matches(kp, k.Left):
 		m.col = max(m.col-1, 0)
 	case key.Matches(kp, k.Right):
@@ -307,6 +526,7 @@ func (m skillsModel) Update(msg tea.Msg) (skillsModel, tea.Cmd) {
 	case key.Matches(kp, k.Clear):
 		if len(m.pend[m.kind]) > 0 {
 			delete(m.pend, m.kind)
+			m.rebuild()
 		}
 	}
 	return m, nil
@@ -360,6 +580,7 @@ func (m *skillsModel) toggle(whole bool) {
 		a := m.data.Agents[m.col].ID
 		now, _ := m.wanted(r, a)
 		p.set(r.ID, a, !now, r.Cells[a].visible())
+		m.rebuild() // group headers count the pending changes
 		return
 	}
 	all := true
@@ -371,6 +592,7 @@ func (m *skillsModel) toggle(whole bool) {
 	for _, a := range m.data.Agents {
 		p.set(r.ID, a.ID, !all, r.Cells[a.ID].visible())
 	}
+	m.rebuild()
 }
 
 // summary describes the pending changes of the current scope, empty if none.
@@ -406,7 +628,7 @@ func (m skillsModel) columns() columns {
 	nameW, repoW := 0, 0
 	for _, it := range m.items {
 		if it.r != nil {
-			nameW = max(nameW, lipgloss.Width(it.r.Name))
+			nameW = max(nameW, lipgloss.Width(it.r.Name)+m.indent())
 			repoW = max(repoW, lipgloss.Width(shortRepo(it.r.Repo)))
 		}
 	}
@@ -494,6 +716,7 @@ func (m skillsModel) cellText(r *row, agent string, st styles) (string, lipgloss
 }
 
 func (m skillsModel) renderRow(r *row, sel bool, c columns, st styles) string {
+	indent := m.indent()
 	// Selected rows are drawn in reverse video piece by piece, so the focused
 	// cell can stand out: it is bracketed and not reversed.
 	var b strings.Builder
@@ -509,7 +732,7 @@ func (m skillsModel) renderRow(r *row, sel bool, c columns, st styles) string {
 	if sel {
 		marker = "▸ "
 	}
-	seg(marker+padTo(r.Name, c.name)+"  ", plainStyle)
+	seg(marker+padTo(strings.Repeat(" ", indent)+r.Name, c.name)+"  ", plainStyle)
 	for i, a := range m.data.Agents {
 		g, style := m.cellText(r, a.ID, st)
 		if sel && i == m.col {
@@ -592,13 +815,7 @@ func (m skillsModel) searchLine(st styles) string {
 	if !m.loaded {
 		return s
 	}
-	shown := 0
-	for _, it := range m.items {
-		if it.r != nil {
-			shown++
-		}
-	}
-	count := st.Dim.Render(i18n.T("skills.count", shown, m.total))
+	count := st.Dim.Render(i18n.T("skills.count", m.shown, m.total))
 	if gap := m.w - lipgloss.Width(s) - lipgloss.Width(count) - 1; gap > 0 {
 		return s + strings.Repeat(" ", gap) + count
 	}
@@ -619,6 +836,10 @@ func (m skillsModel) listLines(c columns, st styles) []string {
 	var out []string
 	for i := m.offset; i < len(m.items) && len(out) < m.listH; i++ {
 		it := m.items[i]
+		if it.grp != nil {
+			out = append(out, m.renderGroup(it.grp, i == m.cursor, st))
+			continue
+		}
 		if it.r == nil {
 			out = append(out, st.Bold.Render(ansi.Truncate("── "+it.header+" ──", m.w, "…")))
 			continue
@@ -626,6 +847,76 @@ func (m skillsModel) listLines(c columns, st styles) []string {
 		out = append(out, m.renderRow(it.r, i == m.cursor, c, st))
 	}
 	return out
+}
+
+// renderGroup draws a repo group's header: fold glyph, name, counts, and the
+// pending changes and updates inside it.
+func (m skillsModel) renderGroup(g *groupHeader, sel bool, st styles) string {
+	glyph := "▸"
+	if g.open {
+		glyph = "▾"
+	}
+	counts := i18n.T("group.counts", g.total, g.enabled)
+	if g.shown != g.total {
+		counts = i18n.T("group.counts.f", g.shown, g.total, g.enabled)
+	}
+	title := glyph + " " + g.title
+	var extra []string
+	if g.pending > 0 {
+		extra = append(extra, i18n.T("group.pending", g.pending))
+	}
+	if g.updates > 0 {
+		extra = append(extra, "↑")
+	}
+	// Budget the cells: the title gives way first, the counts and markers stay.
+	tail := " " + counts
+	for _, e := range extra {
+		tail += " " + e
+	}
+	room := max(m.w-2-lipgloss.Width(tail), 4)
+	title = ansi.Truncate(title, room, "…")
+	if sel {
+		line := "  " + title + tail
+		return st.Cursor.Render(padTo(line, m.w))
+	}
+	line := "  " + st.Bold.Render(title) + st.Dim.Render(" "+counts)
+	if g.pending > 0 {
+		line += " " + st.Pending.Render(i18n.T("group.pending", g.pending))
+	}
+	if g.updates > 0 {
+		line += " " + st.Pending.Render("↑")
+	}
+	return ansi.Truncate(line, m.w, "…")
+}
+
+// groupDetail is the detail pane for a group header.
+func (m skillsModel) groupDetail(g *groupHeader, st styles) []string {
+	labels := []string{"detail.id", "detail.repo", "detail.commit", "group.skills", "group.enabled", "group.updates"}
+	lw := 0
+	for _, l := range labels {
+		lw = max(lw, lipgloss.Width(i18n.T(l)))
+	}
+	kv := func(label, v string) string {
+		l := i18n.T(label)
+		return st.Dim.Render(l+strings.Repeat(" ", lw-lipgloss.Width(l)+2)) + v
+	}
+	var out []string
+	if g.key != unmanagedKey {
+		out = append(out, kv("detail.id", g.key))
+		if g.repoDir != "" {
+			out = append(out, kv("detail.repo", shortPath(g.repoDir, agents.Scope{Global: true})))
+		}
+		if g.head != "" {
+			out = append(out, kv("detail.commit", shortSHA(g.head)))
+		}
+	} else {
+		out = append(out, st.Bold.Render(g.title), st.Dim.Render(i18n.T("detail.unmanaged")))
+	}
+	out = append(out, kv("group.skills", fmt.Sprint(g.total)), kv("group.enabled", fmt.Sprint(g.enabled)))
+	if g.updates > 0 {
+		out = append(out, kv("group.updates", st.Pending.Render(fmt.Sprint(g.updates))))
+	}
+	return append(out, st.Dim.Render(i18n.T("group.hint")))
 }
 
 // shortPath shows p relative to the project when inside it, with ~ for the
@@ -649,7 +940,9 @@ func shortPath(p string, s agents.Scope) string {
 func (m skillsModel) detail(n int, st styles) []string {
 	out := []string{st.Dim.Render(strings.Repeat("─", max(m.w, 1)))}
 	it := m.selected()
-	if it != nil {
+	if m.onHeader() {
+		out = append(out, m.groupDetail(m.items[m.cursor].grp, st)...)
+	} else if it != nil {
 		r := it.r
 		scope := m.data.Sections[it.sec].Scope
 		labels := []string{"detail.id", "detail.repo", "detail.commit", "detail.mode", "detail.links", "detail.visible"}

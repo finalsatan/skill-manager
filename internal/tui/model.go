@@ -345,6 +345,11 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 		return m.openOptionDialog(msg.String() == "p")
 	}
 	if m.tab == tabSkills && msg.String() == "enter" {
+		// On a group header enter folds; on a skill it reviews pending changes.
+		if m.skills.onHeader() {
+			m.skills.toggleFold()
+			return m, nil
+		}
 		return m.startPreview()
 	}
 	if m.tab == tabSkills {
@@ -567,7 +572,16 @@ func (m Model) keys() keyMap {
 	k := newKeyMap(nil, nil)
 	switch m.tab {
 	case tabSkills:
-		k = newKeyMap(m.skills.helpGroups(), m.skills.shortHelp())
+		short := m.skills.shortHelp()
+		k = newKeyMap(m.skills.helpGroups(), short)
+		// Offer the view toggle in the one-line footer only if it still fits.
+		if !m.skills.editing {
+			with := newKeyMap(m.skills.helpGroups(), append(append([]key.Binding(nil), short...), newSkillKeys().View))
+			with.scoped = true
+			if m.width == 0 || lipgloss.Width(m.help.ShortHelpView(with.ShortHelp())) <= m.width {
+				k = with
+			}
+		}
 	case tabUpdates:
 		k = newKeyMap(m.updates.helpGroups(), m.updates.shortHelp())
 	case tabRepos:

@@ -21,6 +21,13 @@ func testData() skillsData {
 
 func loadedModel(t *testing.T, l i18n.Lang) Model {
 	m := newTestModel(t, l)
+	// The grouped view is the default; most tests look at the flat list.
+	return send(t, m, skillsMsg{kind: scopeProject, data: testData()}, press("v"))
+}
+
+// groupedModel is the model as a user first sees it.
+func groupedModel(t *testing.T, l i18n.Lang) Model {
+	m := newTestModel(t, l)
 	return send(t, m, skillsMsg{kind: scopeProject, data: testData()})
 }
 
@@ -218,7 +225,7 @@ func manyRows(n int) skillsData {
 
 func TestSkillsScrolling(t *testing.T) {
 	m := newTestModel(t, i18n.EN)
-	m = send(t, m, tea_size(80, 20), skillsMsg{kind: scopeProject, data: manyRows(100)})
+	m = send(t, m, tea_size(80, 20), skillsMsg{kind: scopeProject, data: manyRows(100)}, press("v"))
 	if got := m.skills.listH; got < 3 {
 		t.Fatalf("list height %d", got)
 	}

@@ -216,6 +216,18 @@ var en = map[string]string{
 
 	"doctor.tag.fixable": "[fixable]",
 	"doctor.tag.manual":  "[manual]",
+
+	"group.unmanaged": "Unmanaged",
+	"group.counts":    "(%d skills · %d enabled)",
+	"group.counts.f":  "(%d/%d skills · %d enabled)",
+	"group.pending":   "%d pending",
+	"group.skills":    "Skills",
+	"group.enabled":   "Enabled",
+	"group.updates":   "With updates",
+	"group.hint":      "space fold/unfold · v flat view",
+	"view.allflat":    "The all-scopes view stays flat.",
+	"help.view":       "view",
+	"help.foldall":    "fold all",
 }
 
 var zh = map[string]string{
@@ -432,4 +444,16 @@ var zh = map[string]string{
 
 	"doctor.tag.fixable": "[可修复]",
 	"doctor.tag.manual":  "[需手动]",
+
+	"group.unmanaged": "未托管",
+	"group.counts":    "（%d 个 · 已启用 %d）",
+	"group.counts.f":  "（%d/%d 个 · 已启用 %d）",
+	"group.pending":   "%d 项待应用",
+	"group.skills":    "技能数",
+	"group.enabled":   "已启用",
+	"group.updates":   "有更新",
+	"group.hint":      "space 折叠/展开 · v 平铺视图",
+	"view.allflat":    "「全部」视图保持平铺。",
+	"help.view":       "视图",
+	"help.foldall":    "全部折叠",
 }
