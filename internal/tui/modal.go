@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -10,6 +11,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"skillet/internal/agents"
+	"skillet/internal/deploy"
 	"skillet/internal/i18n"
 )
 
@@ -279,6 +281,9 @@ func (m Model) contentLines() []string {
 		}
 		if p.Err != nil {
 			out = append(out, "  "+sty.Danger.Render("✗ "+p.Err.Error()))
+			if errors.Is(p.Err, deploy.ErrNameTaken) {
+				out = append(out, "  "+sty.Accent.Render(i18n.T("modal.hint.rename")))
+			}
 		}
 	}
 	if md.manifest {

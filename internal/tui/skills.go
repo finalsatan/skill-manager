@@ -660,9 +660,15 @@ func (m skillsModel) columns() columns {
 	}
 	rest := max(m.w-used-6, 24) // the gaps between name, repo and status
 	nameW, repoW := 0, 0
+	hinted := false
 	for _, it := range m.items {
 		if it.r != nil {
-			nameW = max(nameW, lipgloss.Width(it.r.Name)+m.indent())
+			hinted = hinted || it.r.PathHint != ""
+			w := lipgloss.Width(it.r.Name) + m.indent()
+			if it.r.PathHint != "" {
+				w += 2 + lipgloss.Width(it.r.PathHint)
+			}
+			nameW = max(nameW, w)
 			repoW = max(repoW, lipgloss.Width(shortRepo(it.r.Repo)))
 		}
 	}
@@ -672,6 +678,15 @@ func (m skillsModel) columns() columns {
 	// status column gets the rest, at least a third.
 	c.name = min(nameW, rest*35/100)
 	c.repo = min(repoW, rest*30/100)
+	if hinted {
+		// Directories that tell same-named skills apart are worth the room:
+		// the name may take what the repo column and a short status leave.
+		limit := rest - 10
+		if !m.grouped() {
+			limit -= max(c.repo, 6)
+		}
+		c.name = min(nameW, max(limit, c.name))
+	}
 	c.name, c.repo = max(c.name, 8), max(c.repo, 6)
 	if m.grouped() {
 		// The group header already says which repo; its width goes to the status.
@@ -681,6 +696,25 @@ func (m skillsModel) columns() columns {
 	}
 	c.status = max(rest-c.name-c.repo, 8)
 	return c
+}
+
+// nameCell lays out the name column: the name, then (when set) the skill's
+// directory after two spaces, always w cells in all. The directory gives way
+// first and keeps its tail, which is what tells same-named skills apart
+// (`…cy/pdf`); the name is cut only when there is no room for even a short
+// directory.
+func nameCell(name, path string, w int) (left, hint string) {
+	nw := lipgloss.Width(name)
+	if path == "" || nw+2+4 > w {
+		return padTo(name, w), ""
+	}
+	room := w - nw - 2
+	pw := lipgloss.Width(path)
+	if pw > room {
+		path = "…" + ansi.TruncateLeft(path, pw-room+1, "")
+	}
+	hint = "  " + path
+	return name, hint + strings.Repeat(" ", max(w-nw-lipgloss.Width(hint), 0))
 }
 
 // padTo truncates s to w cells and pads with spaces; widths are in cells, so
@@ -727,6 +761,9 @@ func statusParts(r *row) []part {
 	if r.Alias != "" {
 		ps = append(ps, part{r.Alias + " ← " + r.Name, func(s styles) lipgloss.Style { return s.Dim }})
 	}
+	if r.Clash {
+		ps = append(ps, part{"⚠ " + i18n.T("status.clash"), func(s styles) lipgloss.Style { return s.Danger }})
+	}
 	if r.Health != "" && r.Health != "ok" {
 		ps = append(ps, part{"✗ " + i18n.T("health."+r.Health), func(s styles) lipgloss.Style { return s.Danger }})
 	}
@@ -772,7 +809,11 @@ func (m skillsModel) renderRow(r *row, sel bool, c columns, st styles) string {
 	if sel {
 		marker = "▸ "
 	}
-	seg(marker+padTo(strings.Repeat(" ", indent)+r.Name, c.name)+"  ", plainStyle)
+	seg(marker, plainStyle)
+	name, hint := nameCell(strings.Repeat(" ", indent)+r.Name, r.PathHint, c.name)
+	seg(name, plainStyle)
+	seg(hint, st.Dim)
+	seg("  ", plainStyle)
 	for i, a := range m.data.Agents {
 		g, style := m.cellText(r, a.ID, st)
 		if sel && i == m.col {

@@ -131,7 +131,7 @@ func loadSkills(kind scopeKind, project agents.Scope) tea.Cmd {
 					}
 				}
 				rows := buildRows(buildInput{Scope: s, Agents: msg.data.Agents, Skills: infos,
-					Entries: entries, Targets: targets, Undeployed: kind != scopeAll})
+					Entries: entries, Targets: targets, Undeployed: kind != scopeAll, Clashes: deploy.Clashes(entries)})
 				msg.data.Sections = append(msg.data.Sections, section{Scope: s, Rows: rows})
 			}
 			return nil

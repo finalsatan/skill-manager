@@ -234,6 +234,9 @@ var en = map[string]string{
 	"help.flat": "flat",
 
 	"help.done": "done",
+
+	"status.clash":      "name clash",
+	"modal.hint.rename": "Press R on the skill to give it another link name, then enable it",
 }
 
 var zh = map[string]string{
@@ -468,4 +471,7 @@ var zh = map[string]string{
 	"help.flat": "平铺",
 
 	"help.done": "确定",
+
+	"status.clash":      "同名冲突",
+	"modal.hint.rename": "可在该 skill 上按 R 改名后再启用",
 }

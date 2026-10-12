@@ -66,6 +66,12 @@ type row struct {
 	RepoDir     string
 	Head        string
 	InStore     bool // the skill still exists in the store
+	// PathHint is the skill's directory in its repo, set when another skill
+	// of the same repo has the same name, so the rows can be told apart.
+	PathHint string
+	// Clash is set when an agent sees this skill and another one under the
+	// same name.
+	Clash bool
 
 	Cells   map[string]cellState // by agent id
 	Health  string               // worst health of its links; "" when not enabled
@@ -92,6 +98,8 @@ type buildInput struct {
 	// Undeployed adds a row for every store skill, enabled or not. Without it
 	// only skills with an entry in the scope appear.
 	Undeployed bool
+	// Clashes are the name clashes in Entries (deploy.Clashes).
+	Clashes []deploy.Clash
 }
 
 // buildRows turns the store's skills and a scope's status entries into
@@ -200,13 +208,48 @@ func buildRows(in buildInput) []row {
 		finish(r)
 	}
 
+	// Same name: the copy outside any dot-directory (the canonical one) first,
+	// agent-specific variants such as .openclaw/skills/x after it.
 	sort.SliceStable(managed, func(i, j int) bool {
-		if managed[i].Name != managed[j].Name {
-			return managed[i].Name < managed[j].Name
+		a, b := managed[i], managed[j]
+		if a.Name != b.Name {
+			return a.Name < b.Name
 		}
-		return managed[i].ID < managed[j].ID
+		if a.Repo != b.Repo {
+			return a.Repo < b.Repo
+		}
+		if da, db := hasDotDir(a.RelPath), hasDotDir(b.RelPath); da != db {
+			return !da
+		}
+		if a.RelPath != b.RelPath {
+			return a.RelPath < b.RelPath
+		}
+		return a.ID < b.ID
 	})
 	sort.SliceStable(unmanagedRows, func(i, j int) bool { return unmanagedRows[i].Name < unmanagedRows[j].Name })
+
+	// Same-named skills of one repo get their directory shown. This looks at
+	// every row of the section, not only the visible ones, so labels do not
+	// change while searching or folding.
+	type nameKey struct{ repo, name string }
+	count := map[nameKey]int{}
+	for _, r := range managed {
+		count[nameKey{r.Repo, r.Name}]++
+	}
+	clashPath := map[string]bool{}
+	for _, c := range in.Clashes {
+		for _, p := range c.Paths {
+			clashPath[p] = true
+		}
+	}
+	for _, r := range managed {
+		if count[nameKey{r.Repo, r.Name}] > 1 {
+			r.PathHint = r.RelPath
+		}
+		for _, l := range r.Links {
+			r.Clash = r.Clash || clashPath[l.Path]
+		}
+	}
 
 	out := make([]row, 0, len(managed)+len(unmanagedRows))
 	for _, r := range managed {
@@ -257,7 +300,7 @@ func filterRows(rows []row, onlyEnabled bool, query string) []row {
 			continue
 		}
 		if q != "" {
-			hay := strings.ToLower(strings.Join([]string{r.Name, r.Alias, r.Repo, r.ID, r.Description}, "\n"))
+			hay := strings.ToLower(strings.Join([]string{r.Name, r.Alias, r.Repo, r.ID, r.RelPath, r.Description}, "\n"))
 			if !strings.Contains(hay, q) {
 				continue
 			}
@@ -265,4 +308,15 @@ func filterRows(rows []row, onlyEnabled bool, query string) []row {
 		out = append(out, r)
 	}
 	return out
+}
+
+// hasDotDir reports whether a repo-relative path goes through a directory
+// whose name starts with a dot (.openclaw/skills/x).
+func hasDotDir(rel string) bool {
+	for _, seg := range strings.Split(rel, "/") {
+		if strings.HasPrefix(seg, ".") && seg != "." && seg != ".." {
+			return true
+		}
+	}
+	return false
 }

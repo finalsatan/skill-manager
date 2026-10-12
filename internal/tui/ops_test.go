@@ -13,6 +13,7 @@ import (
 )
 
 type realStore struct {
+	repo  string // the repo id
 	up    string // the local upstream repo
 	proj  agents.Scope
 	pdf   string // skill ids
@@ -32,6 +33,13 @@ func gitIn(t *testing.T, dir string, args ...string) {
 // pdf and docx, and an empty project directory.
 func newRealStore(t *testing.T) *realStore {
 	t.Helper()
+	return newStoreWith(t, "skills/pdf", "skills/docx")
+}
+
+// newStoreWith is newRealStore with the skills at the given repo-relative
+// directories; each skill is named after its directory.
+func newStoreWith(t *testing.T, rels ...string) *realStore {
+	t.Helper()
 	root := t.TempDir()
 	home := filepath.Join(root, "home")
 	t.Setenv("HOME", home)
@@ -41,8 +49,9 @@ func newRealStore(t *testing.T) *realStore {
 		t.Setenv(k, "")
 	}
 	up := filepath.Join(root, "up")
-	for _, n := range []string{"pdf", "docx"} {
-		dir := filepath.Join(up, "skills", n)
+	for _, rel := range rels {
+		n := filepath.Base(rel)
+		dir := filepath.Join(up, filepath.FromSlash(rel))
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			t.Fatal(err)
 		}
@@ -73,7 +82,7 @@ func newRealStore(t *testing.T) *realStore {
 		t.Fatal(err)
 	}
 	return &realStore{
-		up: up, proj: agents.Scope{Dir: proj}, pdf: repo + ":skills/pdf", docx: repo + ":skills/docx",
+		repo: repo, up: up, proj: agents.Scope{Dir: proj}, pdf: repo + ":skills/pdf", docx: repo + ":skills/docx",
 		links: filepath.Join(proj, ".claude", "skills"),
 	}
 }

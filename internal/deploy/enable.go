@@ -14,6 +14,16 @@ import (
 	"skillet/internal/state"
 )
 
+// ErrNameTaken is matched (errors.Is) by the refusal to link a skill under a
+// name that another skill already uses in the target directory. Linking it
+// under another name (`enable --as`) resolves it.
+var ErrNameTaken = errors.New("link name is used by another skill")
+
+type nameTakenError struct{ msg string }
+
+func (e nameTakenError) Error() string        { return e.msg }
+func (e nameTakenError) Is(target error) bool { return target == ErrNameTaken }
+
 // Action describes one change to the filesystem.
 type Action struct {
 	Kind   string // "create", "keep", "replace" (same target, new source), "remove"
@@ -297,7 +307,7 @@ func (m *Manager) planSkill(id string, s agents.Scope, want func([]string) []str
 		keep[target] = true
 		if d := m.St.DeploymentAt(target); d != nil {
 			if d.Skill != id {
-				return nil, fmt.Errorf("%s is already used by skill %s", target, d.Skill)
+				return nil, nameTakenError{fmt.Sprintf("%s is already used by skill %s", target, d.Skill)}
 			}
 			kind := "keep"
 			if d.Pin != pin {
@@ -362,7 +372,7 @@ func (m *Manager) checkFree(target, id, src string) error {
 			}
 			return nil
 		}
-		return fmt.Errorf("%s holds a skillet copy of a different skill (%s)", target, t.Marker.Skill)
+		return nameTakenError{fmt.Sprintf("%s holds a skillet copy of a different skill (%s)", target, t.Marker.Skill)}
 	}
 	return fmt.Errorf("%s already exists and is not managed by skillet; remove or rename it first", target)
 }
