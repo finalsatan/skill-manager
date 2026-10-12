@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"runtime/debug"
 	"text/tabwriter"
 
 	"github.com/spf13/cobra"
@@ -16,13 +17,24 @@ import (
 )
 
 // Version is set at build time with -ldflags "-X github.com/finalsatan/skill-manager/internal/cli.Version=...".
+// Without it, the module version recorded by `go install ...@vX.Y.Z` is used.
 var Version = "dev"
+
+func version() string {
+	if Version != "dev" {
+		return Version
+	}
+	if bi, ok := debug.ReadBuildInfo(); ok && bi.Main.Version != "" && bi.Main.Version != "(devel)" {
+		return bi.Main.Version
+	}
+	return Version
+}
 
 func NewRoot() *cobra.Command {
 	root := &cobra.Command{
 		Use:           "skillet",
 		Short:         "Manage agent skills from git repos across Claude Code, Codex, OpenCode and pi",
-		Version:       Version,
+		Version:       version(),
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		// Bare `skillet` opens the TUI on a terminal and prints help otherwise.

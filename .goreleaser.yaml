@@ -1,0 +1,31 @@
+version: 2
+
+project_name: skillet
+
+builds:
+  - main: ./cmd/skillet
+    binary: skillet
+    env:
+      - CGO_ENABLED=0
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X github.com/finalsatan/skill-manager/internal/cli.Version={{ .Tag }}
+
+archives:
+  - formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    files:
+      - LICENSE
+      - README.md
+      - README.zh-CN.md
+
+checksum:
+  name_template: checksums.txt
+
+changelog:
+  use: github-native

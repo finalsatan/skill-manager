@@ -42,6 +42,10 @@ skill 都放在 git 仓库里，但每个 coding agent 读取的目录各不相�
 
 需要系统里装有 `git`。
 
+**预编译二进制**：[Releases](https://github.com/finalsatan/skill-manager/releases) 页面提供 Linux、macOS、Windows（amd64 / arm64）版本，下载对应平台的压缩包，解压后把 `skillet` 放进 `PATH` 即可。
+
+**用 Go 安装**：
+
 ```bash
 go install github.com/finalsatan/skill-manager/cmd/skillet@latest
 ```

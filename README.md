@@ -42,6 +42,10 @@ Other agents can be added in the config file — see [Configuration](#configurat
 
 skillet needs `git` on your `PATH`.
 
+**Prebuilt binaries** for Linux, macOS and Windows (amd64 / arm64) are on the [Releases](https://github.com/finalsatan/skill-manager/releases) page: download the archive for your platform, extract it and put `skillet` on your `PATH`.
+
+**With Go**:
+
 ```bash
 go install github.com/finalsatan/skill-manager/cmd/skillet@latest
 ```
