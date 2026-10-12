@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 
@@ -89,5 +90,103 @@ func TestCtrlVAnswerReachesTheInput(t *testing.T) {
 	m = send(t, m, cmd())
 	if !m.modal.open || !strings.HasPrefix(m.modal.input.Value(), "abc") {
 		t.Errorf("dialog broken: open=%v input=%q", m.modal.open, m.modal.input.Value())
+	}
+}
+
+func ctrl(c rune) tea.KeyPressMsg { return tea.KeyPressMsg{Code: c, Mod: tea.ModCtrl} }
+
+func TestSearchBoxKeepsFocusWhileWalkingTheList(t *testing.T) {
+	m := loadedModel(t, i18n.EN)
+	m = send(t, m, press("/"))
+	for _, c := range "skills" { // matches every row through its id
+		m = send(t, m, press(string(c)))
+	}
+	if selectedName(m) != "docx" {
+		t.Fatalf("start on %q", selectedName(m))
+	}
+	m = send(t, m, press("down"), press("down"))
+	if selectedName(m) != "pdf" || m.skills.query != "skills" || !m.skills.editing {
+		t.Fatalf("down down: %q query=%q editing=%v", selectedName(m), m.skills.query, m.skills.editing)
+	}
+	m = send(t, m, press("up"), press("up"), press("up"))
+	if selectedName(m) != "docx" || m.skills.query != "skills" {
+		t.Errorf("up at the top: %q", selectedName(m))
+	}
+	m = send(t, m, press("pgdown"))
+	if selectedName(m) == "docx" || selectedName(m) == "gone" {
+		t.Errorf("pgdown did not page: %q", selectedName(m))
+	}
+	m = send(t, m, press("pgup"))
+	if selectedName(m) != "docx" {
+		t.Errorf("pgup: %q", selectedName(m))
+	}
+	m = send(t, m, ctrl('n'))
+	if selectedName(m) != "gone" {
+		t.Errorf("ctrl+n: %q", selectedName(m))
+	}
+	m = send(t, m, ctrl('p'))
+	if selectedName(m) != "docx" {
+		t.Errorf("ctrl+p: %q", selectedName(m))
+	}
+
+	// Letters, digits and space are still text.
+	for _, k := range []string{"j", "k", "g", "G", "h", "l", "1"} {
+		m = send(t, m, press(k))
+	}
+	m = send(t, m, tea.KeyPressMsg{Code: tea.KeySpace, Text: " "})
+	if m.skills.query != "skillsjkgGhl1 " || m.tab != tabSkills {
+		t.Fatalf("query = %q", m.skills.query)
+	}
+	for range 8 {
+		m = send(t, m, tea.KeyPressMsg{Code: tea.KeyBackspace})
+	}
+	if m.skills.query != "skills" {
+		t.Fatalf("after backspaces: %q", m.skills.query)
+	}
+
+	// enter leaves the box with the filter and the cursor on the chosen row;
+	// space then toggles that row's focused cell.
+	m = send(t, m, press("down"), press("down"), press("enter"))
+	if m.skills.editing || m.skills.query != "skills" || selectedName(m) != "pdf" {
+		t.Fatalf("after enter: editing=%v query=%q sel=%q", m.skills.editing, m.skills.query, selectedName(m))
+	}
+	m = send(t, m, press("space"))
+	if cellOf(m, "pdf", "claude") != "−" || m.skills.summary() == "" {
+		t.Errorf("space did not toggle pdf/claude: %s", cellOf(m, "pdf", "claude"))
+	}
+}
+
+func TestSearchWalkingOverGroupHeaders(t *testing.T) {
+	m := groupedAt(t, i18n.EN)
+	m = send(t, m, press("/"), press("a"), press("l"), press("p"))
+	// Only alpha matches; its header and two rows are walkable.
+	var seen []string
+	for range 4 {
+		seen = append(seen, cursorOn(m))
+		m = send(t, m, press("down"))
+	}
+	if want := []string{"▪acme/alpha", "a1", "a2", "a2"}; !reflect.DeepEqual(seen, want) {
+		t.Errorf("walk %v, want %v", seen, want)
+	}
+	if m.skills.query != "alp" {
+		t.Errorf("query %q", m.skills.query)
+	}
+	// ←/→ still move inside the query.
+	m = send(t, m, press("left"), press("x"))
+	if m.skills.query != "alxp" {
+		t.Errorf("left in the query: %q", m.skills.query)
+	}
+}
+
+func TestSearchFooter(t *testing.T) {
+	m := loadedModel(t, i18n.EN)
+	m = send(t, m, press("/"))
+	if v := plain(m.View()); !strings.Contains(v, "↑/↓ move • enter done • esc clear") {
+		t.Errorf("en footer:\n%s", v)
+	}
+	zh := loadedModel(t, i18n.ZH)
+	zh = send(t, zh, press("/"))
+	if v := plain(zh.View()); !strings.Contains(v, "↑/↓ 移动 • enter 确定 • esc 清除") {
+		t.Errorf("zh footer:\n%s", v)
 	}
 }

@@ -414,7 +414,7 @@ type skillKeys struct {
 	Up, Down, PgUp, PgDown, Top, Bottom, Filter, Search key.Binding
 	Confirm, Clear                                      key.Binding
 	Left, Right, Toggle, ToggleRow, Review              key.Binding
-	Pin, Alias, View, FoldAll, Fold, Flat               key.Binding
+	Pin, Alias, View, FoldAll, Fold, Flat, Done         key.Binding
 }
 
 func newSkillKeys() skillKeys {
@@ -434,6 +434,7 @@ func newSkillKeys() skillKeys {
 		Pin:       key.NewBinding(key.WithKeys("p"), key.WithHelp("p", i18n.T("help.pin"))),
 		Alias:     key.NewBinding(key.WithKeys("R"), key.WithHelp("R", i18n.T("help.alias"))),
 		View:      key.NewBinding(key.WithKeys("v"), key.WithHelp("v", i18n.T("help.view"))),
+		Done:      key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", i18n.T("help.done"))),
 		Fold:      key.NewBinding(key.WithKeys("space"), key.WithHelp("space/enter", i18n.T("help.fold"))),
 		Flat:      key.NewBinding(key.WithKeys("v"), key.WithHelp("v", i18n.T("help.flat"))),
 		FoldAll:   key.NewBinding(key.WithKeys("z"), key.WithHelp("z", i18n.T("help.foldall"))),
@@ -447,7 +448,7 @@ func newSkillKeys() skillKeys {
 func (m skillsModel) helpGroups() [][]key.Binding {
 	k := newSkillKeys()
 	if m.editing {
-		return [][]key.Binding{{k.Confirm, k.Clear}}
+		return [][]key.Binding{{k.Up, k.PgUp}, {k.Done, k.Clear}}
 	}
 	return [][]key.Binding{{k.Up, k.PgUp, k.Top, k.Left}, {k.Toggle, k.ToggleRow, k.Review, k.Clear}, {k.Pin, k.Alias, k.Filter, k.Search}, {k.View, k.FoldAll}}
 }
@@ -456,7 +457,7 @@ func (m skillsModel) helpGroups() [][]key.Binding {
 func (m skillsModel) shortHelp() []key.Binding {
 	k := newSkillKeys()
 	if m.editing {
-		return []key.Binding{k.Confirm, k.Clear}
+		return []key.Binding{k.Up, k.Done, k.Clear}
 	}
 	if m.onHeader() {
 		return []key.Binding{k.Up, k.Fold, k.FoldAll}
@@ -478,6 +479,23 @@ func (m skillsModel) Update(msg tea.Msg) (skillsModel, tea.Cmd) {
 				m.search.SetValue("")
 				m.search.Blur()
 				m.rebuild()
+				return m, nil
+			}
+		}
+		// The list can be walked while typing; letters stay text.
+		if kp, ok := msg.(tea.KeyPressMsg); ok {
+			switch kp.String() {
+			case "up", "ctrl+p":
+				m.move(-1)
+				return m, nil
+			case "down", "ctrl+n":
+				m.move(1)
+				return m, nil
+			case "pgup":
+				m.moveBy(-max(m.listH-1, 1))
+				return m, nil
+			case "pgdown":
+				m.moveBy(max(m.listH-1, 1))
 				return m, nil
 			}
 		}

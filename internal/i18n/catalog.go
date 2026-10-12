@@ -232,6 +232,8 @@ var en = map[string]string{
 
 	"help.fold": "fold/unfold",
 	"help.flat": "flat",
+
+	"help.done": "done",
 }
 
 var zh = map[string]string{
@@ -464,4 +466,6 @@ var zh = map[string]string{
 
 	"help.fold": "折叠/展开",
 	"help.flat": "平铺",
+
+	"help.done": "确定",
 }
