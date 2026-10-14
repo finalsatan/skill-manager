@@ -40,23 +40,56 @@ skill 都放在 git 仓库里，但每个 coding agent 读取的目录各不相�
 
 ## 安装
 
-需要系统里装有 `git`。
+skillet 是单个二进制文件，需要系统里装有 `git`（会直接使用你已有的 SSH key 和凭据配置）。
 
-**预编译二进制**：[Releases](https://github.com/finalsatan/skill-manager/releases) 页面提供 Linux、macOS、Windows（amd64 / arm64）版本，下载对应平台的压缩包，解压后把 `skillet` 放进 `PATH` 即可。
+### Linux
 
-**用 Go 安装**：
+```bash
+# x86_64；ARM64 请换成 skillet_linux_arm64.tar.gz
+curl -fsSL https://github.com/finalsatan/skill-manager/releases/latest/download/skillet_linux_amd64.tar.gz | tar -xz skillet
+sudo install skillet /usr/local/bin/    # 或：mkdir -p ~/.local/bin && mv skillet ~/.local/bin/
+```
+
+没有 git 的话：`sudo apt install git`（Debian/Ubuntu）或 `sudo dnf install git`（Fedora）。
+
+### macOS
+
+```bash
+# Apple 芯片；Intel 芯片的 Mac 请换成 skillet_darwin_amd64.tar.gz
+curl -fsSL https://github.com/finalsatan/skill-manager/releases/latest/download/skillet_darwin_arm64.tar.gz | tar -xz skillet
+sudo install skillet /usr/local/bin/
+```
+
+git 可以通过 Xcode 命令行工具（`xcode-select --install`）或 `brew install git` 安装。如果是用浏览器下载的压缩包、macOS 拦截了运行，执行 `xattr -d com.apple.quarantine skillet`。
+
+### Windows
+
+在 PowerShell 里运行（ARM64 请换成 `skillet_windows_arm64.zip`）：
+
+```powershell
+$dir = "$env:LOCALAPPDATA\Programs\skillet"
+Invoke-WebRequest https://github.com/finalsatan/skill-manager/releases/latest/download/skillet_windows_amd64.zip -OutFile "$env:TEMP\skillet.zip"
+Expand-Archive "$env:TEMP\skillet.zip" $dir -Force
+[Environment]::SetEnvironmentVariable("Path", [Environment]::GetEnvironmentVariable("Path", "User") + ";$dir", "User")
+```
+
+重新打开一个终端让 `PATH` 生效。没有 git 的话用 `winget install Git.Git` 安装。不需要管理员权限：不能建软链接时 skillet 会改用目录联接（junction），见[工作原理](#工作原理)。
+
+### 用 Go 安装
 
 ```bash
 go install github.com/finalsatan/skill-manager/cmd/skillet@latest
 ```
 
-或从源码构建：
+### 从源码构建
 
 ```bash
 git clone https://github.com/finalsatan/skill-manager.git
 cd skill-manager
 go build -o bin/skillet ./cmd/skillet
 ```
+
+所有压缩包和校验和都在 [Releases](https://github.com/finalsatan/skill-manager/releases) 页面。安装后运行 `skillet --version` 确认。
 
 ## 快速上手
 

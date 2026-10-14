@@ -15,7 +15,9 @@ builds:
       - -s -w -X github.com/finalsatan/skill-manager/internal/cli.Version={{ .Tag }}
 
 archives:
-  - formats: [tar.gz]
+  # No version in the name, so releases/latest/download/<name> always works.
+  - name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
+    formats: [tar.gz]
     format_overrides:
       - goos: windows
         formats: [zip]

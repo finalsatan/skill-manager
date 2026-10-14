@@ -40,23 +40,56 @@ Other agents can be added in the config file — see [Configuration](#configurat
 
 ## Installation
 
-skillet needs `git` on your `PATH`.
+skillet is a single binary. It needs `git` on your `PATH` (it uses your existing SSH keys and credential helpers).
 
-**Prebuilt binaries** for Linux, macOS and Windows (amd64 / arm64) are on the [Releases](https://github.com/finalsatan/skill-manager/releases) page: download the archive for your platform, extract it and put `skillet` on your `PATH`.
+### Linux
 
-**With Go**:
+```bash
+# x86_64; use skillet_linux_arm64.tar.gz on ARM64
+curl -fsSL https://github.com/finalsatan/skill-manager/releases/latest/download/skillet_linux_amd64.tar.gz | tar -xz skillet
+sudo install skillet /usr/local/bin/    # or: mkdir -p ~/.local/bin && mv skillet ~/.local/bin/
+```
+
+Install git if needed: `sudo apt install git` (Debian/Ubuntu) or `sudo dnf install git` (Fedora).
+
+### macOS
+
+```bash
+# Apple Silicon; use skillet_darwin_amd64.tar.gz on Intel Macs
+curl -fsSL https://github.com/finalsatan/skill-manager/releases/latest/download/skillet_darwin_arm64.tar.gz | tar -xz skillet
+sudo install skillet /usr/local/bin/
+```
+
+git comes with the Xcode Command Line Tools (`xcode-select --install`) or `brew install git`. If you downloaded the archive with a browser and macOS blocks the binary, run `xattr -d com.apple.quarantine skillet`.
+
+### Windows
+
+In PowerShell (use `skillet_windows_arm64.zip` on ARM64):
+
+```powershell
+$dir = "$env:LOCALAPPDATA\Programs\skillet"
+Invoke-WebRequest https://github.com/finalsatan/skill-manager/releases/latest/download/skillet_windows_amd64.zip -OutFile "$env:TEMP\skillet.zip"
+Expand-Archive "$env:TEMP\skillet.zip" $dir -Force
+[Environment]::SetEnvironmentVariable("Path", [Environment]::GetEnvironmentVariable("Path", "User") + ";$dir", "User")
+```
+
+Open a new terminal so the `PATH` change takes effect. Install git with `winget install Git.Git` if needed. No admin rights are required: skillet uses directory junctions when symlinks aren't allowed (see [How it works](#how-it-works)).
+
+### With Go
 
 ```bash
 go install github.com/finalsatan/skill-manager/cmd/skillet@latest
 ```
 
-Or build from source:
+### From source
 
 ```bash
 git clone https://github.com/finalsatan/skill-manager.git
 cd skill-manager
 go build -o bin/skillet ./cmd/skillet
 ```
+
+All archives and their checksums are on the [Releases](https://github.com/finalsatan/skill-manager/releases) page. Run `skillet --version` to check the installation.
 
 ## Quick start
 
