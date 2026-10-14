@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -82,7 +83,7 @@ func TestSkillsNavigationAndDetail(t *testing.T) {
 	v := plain(m.View())
 	for _, want := range []string{
 		"r:skills/pdf", "/store/r", "1234567", "symlink",
-		".claude/skills/pdf → /store/r/skills/pdf", "claude, opencode",
+		filepath.FromSlash(".claude/skills/pdf") + " → /store/r/skills/pdf", "claude, opencode",
 	} {
 		if !strings.Contains(v, want) {
 			t.Errorf("detail lacks %q:\n%s", want, v)

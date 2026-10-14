@@ -167,8 +167,11 @@ func TestNameTakenHintOnRealStore(t *testing.T) {
 	for l, hint := range map[i18n.Lang]string{i18n.EN: "Press R on the skill to give it another link name, then enable it", i18n.ZH: "可在该 skill 上按 R 改名后再启用"} {
 		m := loadedModel(t, l)
 		m = send(t, m, press("space"), press("enter"), pm)
+		// The error line holds the full link path and may be cut off at the
+		// modal's edge (long temp dirs on macOS and Windows); ErrNameTaken is
+		// checked above, so only the hint is looked for here.
 		v := plain(m.View())
-		if !strings.Contains(v, "is already used") || !strings.Contains(v, hint) {
+		if !strings.Contains(v, hint) {
 			t.Errorf("%s: hint missing:\n%s", l, v)
 		}
 	}

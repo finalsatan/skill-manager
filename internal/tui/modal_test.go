@@ -2,6 +2,7 @@ package tui
 
 import (
 	"errors"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -45,7 +46,7 @@ func TestModalPreviewEnglish(t *testing.T) {
 	v := plain(m.View())
 	for _, want := range []string{
 		"Review changes", "docx", "Enable for claude",
-		"+ .claude/skills/docx → /store/r/skills/docx (symlink)",
+		"+ " + filepath.FromSlash(".claude/skills/docx") + " → /store/r/skills/docx (symlink)",
 		"Visible afterwards: claude, opencode", "Note: also visible to opencode",
 		"skillet.toml will be updated.", "[ Apply ]", "[ Back ]",
 	} {
