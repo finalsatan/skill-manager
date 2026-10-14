@@ -15,7 +15,7 @@ import (
 func testData() skillsData {
 	rows := buildRows(buildInput{
 		Scope: agents.Scope{Dir: proj}, Agents: testAgents(), Skills: testSkills(), Entries: testEntries(), Undeployed: true,
-		Targets: map[string]string{proj + "/.claude/skills/pdf": "/store/r/skills/pdf"},
+		Targets: map[string]string{filepath.Join(proj, ".claude/skills/pdf"): "/store/r/skills/pdf"},
 	})
 	return skillsData{Agents: testAgents(), Sections: []section{{Scope: agents.Scope{Dir: proj}, Rows: rows}}}
 }
