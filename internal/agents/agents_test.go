@@ -41,15 +41,20 @@ func TestPlanUsesFewestDirs(t *testing.T) {
 	}{
 		{[]string{"all"}, nil, map[string][]string{
 			".claude/skills": {"claude", "opencode"},
-			".agents/skills": {"codex", "pi"},
+			".agents/skills": {"codex", "agy", "pi"},
 		}},
 		{[]string{"opencode"}, nil, map[string][]string{".opencode/skills": {"opencode"}}},
 		{[]string{"pi", "codex"}, nil, map[string][]string{".agents/skills": {"codex", "pi"}}},
+		{[]string{"pi", "agy"}, nil, map[string][]string{".agents/skills": {"agy", "pi"}}},
+		{[]string{"opencode", "agy"}, nil, map[string][]string{".agents/skills": {"agy", "opencode"}}},
 		// An existing link in .claude/skills already serves opencode.
 		{[]string{"claude", "opencode"}, []string{filepath.Join(s.Dir, ".claude/skills")},
 			map[string][]string{".claude/skills": {"claude", "opencode"}}},
 		{[]string{"opencode"}, []string{filepath.Join(s.Dir, ".agents/skills")},
 			map[string][]string{".agents/skills": {"opencode"}}},
+		// Antigravity CLI also reads .agent/skills in workspaces.
+		{[]string{"agy"}, []string{filepath.Join(s.Dir, ".agent/skills")},
+			map[string][]string{".agent/skills": {"agy"}}},
 	}
 	for _, c := range cases {
 		as, err := r.Resolve(c.ask)
@@ -63,6 +68,39 @@ func TestPlanUsesFewestDirs(t *testing.T) {
 		if g := dirs(got, s); !reflect.DeepEqual(g, c.want) {
 			t.Errorf("Plan(%v, existing=%v) = %v, want %v", c.ask, c.existing, g, c.want)
 		}
+	}
+}
+
+func TestPlanGlobalIncludesAntigravityDir(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	for _, k := range []string{"CLAUDE_CONFIG_DIR", "XDG_CONFIG_HOME", "CODEX_HOME", "PI_CODING_AGENT_DIR"} {
+		t.Setenv(k, "")
+	}
+	r, err := NewRegistry(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	as, err := r.Resolve([]string{"all"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := Plan(as, Scope{Global: true}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	byDir := map[string][]string{}
+	for _, p := range got {
+		byDir[p.Dir] = p.Agents
+	}
+	want := map[string][]string{
+		filepath.Join(home, ".claude", "skills"):           {"claude", "opencode"},
+		filepath.Join(home, ".agents", "skills"):           {"codex", "pi"},
+		filepath.Join(home, ".gemini", "config", "skills"): {"agy"},
+	}
+	if !reflect.DeepEqual(byDir, want) {
+		t.Errorf("Plan(all, global) = %v, want %v", byDir, want)
 	}
 }
 
@@ -133,20 +171,21 @@ func TestDetectInstalled(t *testing.T) {
 		}
 		return out
 	}
-	want := func(claude, codex, opencode, pi string) {
+	want := func(claude, codex, agy, opencode, pi string) {
 		t.Helper()
 		got := found()
-		exp := map[string]string{"claude": claude, "codex": codex, "opencode": opencode, "pi": pi, "hermes": "?"}
+		exp := map[string]string{"claude": claude, "codex": codex, "agy": agy, "opencode": opencode, "pi": pi, "hermes": "?"}
 		if !reflect.DeepEqual(got, exp) {
 			t.Errorf("detected %v, want %v", got, exp)
 		}
 	}
-	want("no", "no", "no", "no")
+	want("no", "no", "no", "no", "no")
 
 	// Config directories count, wherever the agent's own variable points.
 	os.MkdirAll(filepath.Join(home, ".claude"), 0o755)
 	os.MkdirAll(filepath.Join(home, ".config", "opencode"), 0o755)
-	want("yes", "no", "yes", "no")
+	os.MkdirAll(filepath.Join(home, ".gemini", "antigravity-cli"), 0o755)
+	want("yes", "no", "yes", "yes", "no")
 	codex := filepath.Join(t.TempDir(), "codex")
 	os.MkdirAll(codex, 0o755)
 	t.Setenv("CODEX_HOME", codex)
@@ -156,10 +195,18 @@ func TestDetectInstalled(t *testing.T) {
 	}
 
 	// A binary on PATH counts without any config directory.
-	fakeBinary(t, "pi")
+	os.RemoveAll(filepath.Join(home, ".gemini", "antigravity-cli"))
+	fakeBinary(t, "agy")
 	t.Setenv("CODEX_HOME", "")
 	r, _ = NewRegistry([]config.CustomAgent{{ID: "hermes", ProjectDir: ".hermes/skills", GlobalDir: "~/.hermes/skills"}})
-	want("yes", "no", "yes", "yes")
+	want("yes", "no", "yes", "yes", "no")
+	if agy, _ := r.Get("agy"); !strings.Contains(agy.Detect().Via, "agy") {
+		t.Errorf("via = %q", agy.Detect().Via)
+	}
+
+	fakeBinary(t, "pi")
+	r, _ = NewRegistry([]config.CustomAgent{{ID: "hermes", ProjectDir: ".hermes/skills", GlobalDir: "~/.hermes/skills"}})
+	want("yes", "no", "no", "yes", "yes")
 	if pi, _ := r.Get("pi"); !strings.Contains(pi.Detect().Via, "pi") {
 		t.Errorf("via = %q", pi.Detect().Via)
 	}

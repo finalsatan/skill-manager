@@ -92,6 +92,7 @@ reads = [".hermes/skills"]
 |---|---|---|---|
 | `claude` | `.claude/skills` | `$CLAUDE_CONFIG_DIR` 或 `~/.claude` 下的 `skills` | — |
 | `codex` | `.agents/skills` | `~/.agents/skills` | `~/.codex/skills`（旧路径，只用于查重） |
+| `agy` | `.agents/skills` | `~/.gemini/config/skills` | `.agent/skills`、`_agents/skills`、`_agent/skills`（项目级） |
 | `opencode` | `.opencode/skills` | `~/.config/opencode/skills` | `.claude/skills`、`.agents/skills`（项目和全局） |
 | `pi` | `.pi/skills` | `$PI_CODING_AGENT_DIR` 或 `~/.pi/agent` 下的 `skills` | `.agents/skills`（项目和全局） |
 
@@ -252,7 +253,7 @@ skillet hook claude
 - 所有会改文件系统的命令支持 `--dry-run`（`repo add` 不联网不 clone；`repo remove` 列出将删除的链接/副本/pin 检出及拒绝原因；`update` 照常 fetch 但不应用；`save` 把清单打印到 stdout 而不写文件），查询类命令（`list`、`repo list/show`、`status`、`check`、`pending`、`doctor`、`agents`）支持 `--json`。
 - `status --all`（与 `--dir`/`--global` 互斥）依次打印每个有部署记录的 scope：先全局，再各项目目录（按路径排序）；目录已不存在的项目跳过并提示（`doctor --fix` 会忘掉它）。`--json` 输出 `[{scope, dir, missing?, entries}]`。
 - `repo show` 不联网：上游落后数来自上次 `check` 记录的 `upstream`（与 `diffRepo` 同一逻辑），skill 列表和警告来自对 clone 的重新扫描。
-- `agents` 的 INSTALLED：内置 agent 的二进制（`claude`、`codex`、`opencode`、`pi`）在 PATH 上，或配置目录存在（`$CLAUDE_CONFIG_DIR`/`~/.claude`、`$CODEX_HOME`/`~/.codex`、`$XDG_CONFIG_HOME/opencode`、`~/.pi` 或 `$PI_CODING_AGENT_DIR`）即为 `yes`，都没有为 `no`；自定义 agent 没有可检测的信息，显示 `-`（JSON 为 `installed: null`）。
+- `agents` 的 INSTALLED：内置 agent 的二进制（`claude`、`codex`、`agy`、`opencode`、`pi`）在 PATH 上，或配置目录存在（`$CLAUDE_CONFIG_DIR`/`~/.claude`、`$CODEX_HOME`/`~/.codex`、`~/.gemini/antigravity-cli`、`$XDG_CONFIG_HOME/opencode`、`~/.pi` 或 `$PI_CODING_AGENT_DIR`）即为 `yes`，都没有为 `no`；自定义 agent 没有可检测的信息，显示 `-`（JSON 为 `installed: null`）。
 
 ## 8. Skill 扫描与校验
 

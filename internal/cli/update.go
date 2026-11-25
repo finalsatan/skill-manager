@@ -254,7 +254,7 @@ applied, without asking or changing anything.`,
 				}
 			}
 			if restart {
-				fmt.Fprintln(out, "Claude Code reloads skills automatically; restart Codex / OpenCode / pi sessions to pick up changes.")
+				fmt.Fprintln(out, "Claude Code reloads skills automatically; restart Codex / Antigravity CLI / OpenCode / pi sessions to pick up changes.")
 			}
 			switch {
 			case failed > 0:
