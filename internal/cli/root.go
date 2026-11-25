@@ -33,7 +33,7 @@ func version() string {
 func NewRoot() *cobra.Command {
 	root := &cobra.Command{
 		Use:           "skillet",
-		Short:         "Manage agent skills from git repos across Claude Code, Codex, OpenCode and pi",
+		Short:         "Manage agent skills from git repos across Claude Code, Codex, Antigravity CLI, OpenCode and pi",
 		Version:       version(),
 		SilenceUsage:  true,
 		SilenceErrors: true,

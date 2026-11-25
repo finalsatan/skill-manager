@@ -287,7 +287,7 @@ func newEnableCmd() *cobra.Command {
 		Long: `Link skills into agents' skill directories.
 
 When several agents are requested, skillet creates as few links as possible:
-OpenCode also reads .claude/skills, and pi and OpenCode also read .agents/skills.
+OpenCode also reads .claude/skills, and Antigravity CLI, OpenCode and pi also read .agents/skills.
 The output lists every agent that can see the skill afterwards.
 
 --pin links a fixed revision (sha, tag or branch of the skill's repo) instead
@@ -360,7 +360,7 @@ SKILLET_NO_INPUT=1 turns that off.`,
 		},
 	}
 	sf.register(cmd)
-	cmd.Flags().StringSliceVarP(&agentIDs, "agent", "a", nil, "agents to enable for (claude, codex, opencode, pi, all)")
+	cmd.Flags().StringSliceVarP(&agentIDs, "agent", "a", nil, "agents to enable for (claude, codex, agy, opencode, pi, all)")
 	cmd.Flags().StringVar(&mode, "mode", "", "link mode: auto, symlink, junction, copy (default from config)")
 	cmd.Flags().StringVar(&pin, "pin", "", "pin to a git revision (sha, tag or branch) of the skill's repo")
 	cmd.Flags().BoolVar(&unpin, "unpin", false, "move pinned links back to the repo's current checkout")

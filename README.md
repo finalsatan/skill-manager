@@ -2,7 +2,7 @@
 
 # skillet
 
-**Manage agent skills from git repos across Claude Code, Codex, OpenCode and pi.**
+**Manage agent skills from git repos across Claude Code, Codex, Antigravity CLI, OpenCode and pi.**
 
 [![CI](https://github.com/finalsatan/skill-manager/actions/workflows/ci.yml/badge.svg)](https://github.com/finalsatan/skill-manager/actions/workflows/ci.yml)
 [![Go](https://img.shields.io/github/go-mod/go-version/finalsatan/skill-manager)](go.mod)
@@ -33,6 +33,7 @@ Agent skills live in git repositories, but every coding agent reads them from a 
 |---|---|---|
 | Claude Code | `.claude/skills` | `~/.claude/skills` |
 | Codex | `.agents/skills` | `~/.agents/skills` |
+| Antigravity CLI (`agy`) | `.agents/skills` (also reads `.agent/skills`, `_agents/skills`, `_agent/skills`) | `~/.gemini/config/skills` |
 | OpenCode | `.opencode/skills` (also reads `.claude/skills`, `.agents/skills`) | `~/.config/opencode/skills` |
 | pi | `.pi/skills` (also reads `.agents/skills`) | `~/.pi/agent/skills` |
 
@@ -147,7 +148,7 @@ global_dir = "~/.hermes/skills"
 
 ## How it works
 
-- **Minimal links**: OpenCode also reads `.claude/skills` and `.agents/skills`, and pi also reads `.agents/skills`, so `-a all` creates just two links: `.claude/skills/<name>` and `.agents/skills/<name>`.
+- **Minimal links**: OpenCode also reads `.claude/skills` and `.agents/skills`, and Antigravity CLI and pi also read `.agents/skills`, so `-a all` creates just two links in a project: `.claude/skills/<name>` and `.agents/skills/<name>`.
 - **Never touches what isn't its own**: if a target already holds a directory or link skillet did not create, the whole operation is refused and nothing changes.
 - **Windows**: tries a symlink, then a junction (no admin rights needed), then a copy. Copies carry a `.skillet-source.json` so skillet can recognise them and detect manual edits. Force a mode with `--mode` or `link_mode` in the config.
 - **Updates**: symlinks pick up changes automatically; copies are re-copied unless edited by hand; renamed or moved skills are relinked; skills deleted upstream are unlinked. Repositories with local changes or a diverged history are never updated.

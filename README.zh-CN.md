@@ -2,7 +2,7 @@
 
 # skillet
 
-**用 git 仓库统一管理 Claude Code、Codex、OpenCode、pi 的 agent skill。**
+**用 git 仓库统一管理 Claude Code、Codex、Antigravity CLI、OpenCode、pi 的 agent skill。**
 
 [![CI](https://github.com/finalsatan/skill-manager/actions/workflows/ci.yml/badge.svg)](https://github.com/finalsatan/skill-manager/actions/workflows/ci.yml)
 [![Go](https://img.shields.io/github/go-mod/go-version/finalsatan/skill-manager)](go.mod)
@@ -33,6 +33,7 @@ skill 都放在 git 仓库里，但每个 coding agent 读取的目录各不相�
 |---|---|---|
 | Claude Code | `.claude/skills` | `~/.claude/skills` |
 | Codex | `.agents/skills` | `~/.agents/skills` |
+| Antigravity CLI (`agy`) | `.agents/skills`（也读 `.agent/skills`、`_agents/skills`、`_agent/skills`） | `~/.gemini/config/skills` |
 | OpenCode | `.opencode/skills`（也读 `.claude/skills`、`.agents/skills`） | `~/.config/opencode/skills` |
 | pi | `.pi/skills`（也读 `.agents/skills`） | `~/.pi/agent/skills` |
 
@@ -147,7 +148,7 @@ global_dir = "~/.hermes/skills"
 
 ## 工作原理
 
-- **最少链接**：OpenCode 也读 `.claude/skills` 和 `.agents/skills`，pi 也读 `.agents/skills`，所以 `-a all` 只建两条链接：`.claude/skills/<name>` 和 `.agents/skills/<name>`。
+- **最少链接**：OpenCode 也读 `.claude/skills` 和 `.agents/skills`，Antigravity CLI 和 pi 也读 `.agents/skills`，所以项目级 `-a all` 只建两条链接：`.claude/skills/<name>` 和 `.agents/skills/<name>`。
 - **不碰别人的东西**：目标位置已有不是 skillet 创建的目录或链接时，整个操作都会被拒绝，不做任何改动。
 - **Windows**：依次尝试 symlink、junction（不需要管理员权限）、复制。复制出来的目录里有 `.skillet-source.json`，用来识别和检测手动修改。可用 `--mode` 或配置里的 `link_mode` 强制指定。
 - **更新**：软链接自动生效；复制的副本会重新复制，手动改过的跳过；改名或换目录的 skill 会重新链接；上游删除的 skill 会删掉链接。有本地修改或已分叉的仓库不会被更新。

@@ -10,6 +10,7 @@
 |---|---|---|---|---|
 | Claude Code | `.claude/skills/<name>/`（从 cwd 向上到仓库根；子目录嵌套懒加载） | `~/.claude/skills/<name>/` | 企业 managed 目录、插件、`--add-dir` | 官方支持；多处链接指向同一目标只加载一次 |
 | Codex | `.agents/skills/`（cwd 到仓库根逐级扫描） | `~/.agents/skills/`（`~/.codex/skills` 仍兼容读取，计划废弃） | `/etc/codex/skills`、内置系统 skill | 官方支持，跟随链接目标 |
+| Antigravity CLI (`agy`) | `.agents/skills/`（也扫描 `.agent/skills/`、`_agents/skills/`、`_agent/skills/`，cwd 到仓库根） | `~/.gemini/config/skills/` | `skills.json` 显式声明、内置 skill | 官方支持 |
 | OpenCode | `.opencode/skills/`、`.claude/skills/`、`.agents/skills/`（向上到 git worktree 根） | `~/.config/opencode/skills/`、`~/.claude/skills/`、`~/.agents/skills/` | — | 文档未说明，需实测 |
 | pi | `.pi/skills/`（约定，官方文档未写明）、`.agents/skills/`（向上到仓库根） | `~/.pi/agent/skills/`（agent 目录可用 `PI_CODING_AGENT_DIR` 改）、`~/.agents/skills/` | settings 里的 `skills` 数组、pi packages | 文档未说明；社区做法普遍是软链接/clone 进目录 |
 
@@ -83,6 +84,7 @@
 - Claude Code skills：https://code.claude.com/docs/en/skills
 - Codex skills：https://learn.chatgpt.com/docs/build-skills
 - Codex `~/.agents/skills` 迁移讨论：https://community.openai.com/t/codex-desktop-is-the-empty-skills-picker-a-temporary-upgrade-issue/1381921
+- Antigravity CLI skills：https://antigravity.google/docs/skills
 - OpenCode skills：https://opencode.ai/docs/skills/
 - pi skills：https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/docs/skills.md
 - pi 路径（第三方）：https://wener.me/notes/ai/agent/pi

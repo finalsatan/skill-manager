@@ -68,7 +68,8 @@ func envOr(key, fallback string) string {
 
 // Builtin returns the built-in agents in planning order. Agents whose
 // directory is read by others come first so that one link can serve several
-// agents (Claude's dir also serves OpenCode, .agents also serves pi).
+// agents (Claude's dir also serves OpenCode, .agents also serves agy, OpenCode
+// and pi).
 func Builtin() ([]Agent, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -80,6 +81,7 @@ func Builtin() ([]Agent, error) {
 	codexHome := envOr("CODEX_HOME", filepath.Join(home, ".codex"))
 	userAgents := filepath.Join(home, ".agents", "skills")
 	userClaude := filepath.Join(claudeHome, "skills")
+	agyGlobal := filepath.Join(home, ".gemini", "config", "skills")
 
 	return []Agent{
 		{
@@ -96,6 +98,14 @@ func Builtin() ([]Agent, error) {
 			// ~/.codex/skills is the legacy location Codex still reads.
 			GlobalReads: []string{userAgents, filepath.Join(codexHome, "skills")},
 			Binary:      "codex", ConfigDirs: []string{codexHome},
+		},
+		{
+			ID: "agy", Name: "Antigravity CLI",
+			ProjectDir: ".agents/skills", GlobalDir: agyGlobal,
+			// Antigravity also discovers .agent/, _agents/ and _agent/ in workspaces.
+			ProjectReads: []string{".agents/skills", ".agent/skills", "_agents/skills", "_agent/skills"},
+			GlobalReads:  []string{agyGlobal},
+			Binary:       "agy", ConfigDirs: []string{filepath.Join(home, ".gemini", "antigravity-cli")},
 		},
 		{
 			ID: "opencode", Name: "OpenCode",

@@ -99,11 +99,11 @@ func TestEnableAllAgentsCreatesTwoLinks(t *testing.T) {
 	e := setup(t, "auto")
 	res := e.enable(t, []string{"pdf"}, "all")
 
-	want := []string{".agents/skills/pdf=codex,pi", ".claude/skills/pdf=claude,opencode"}
+	want := []string{".agents/skills/pdf=codex,agy,pi", ".claude/skills/pdf=claude,opencode"}
 	if got := e.targets(); strings.Join(got, " ") != strings.Join(want, " ") {
 		t.Fatalf("targets = %v, want %v", got, want)
 	}
-	if v := res[0].Visible; v["opencode"] != 2 || v["claude"] != 1 || v["pi"] != 1 {
+	if v := res[0].Visible; v["opencode"] != 2 || v["claude"] != 1 || v["agy"] != 1 || v["pi"] != 1 {
 		t.Errorf("visible = %v", v)
 	}
 	for _, d := range e.m.St.Deployments {
@@ -123,7 +123,7 @@ func TestEnableAllAgentsCreatesTwoLinks(t *testing.T) {
 func TestEnableReportsUnwantedVisibility(t *testing.T) {
 	e := setup(t, "auto")
 	res := e.enable(t, []string{"web-search"}, "codex")
-	if got := strings.Join(res[0].Unwanted, ","); got != "opencode,pi" {
+	if got := strings.Join(res[0].Unwanted, ","); got != "agy,opencode,pi" {
 		t.Errorf("unwanted = %q", got)
 	}
 }
